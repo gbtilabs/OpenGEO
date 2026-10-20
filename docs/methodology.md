@@ -1,45 +1,73 @@
-# Evidence methodology
+# How OpenGEO measures visibility
 
-When the SurfacedBy connection supports question suggestions, it reads selected public pages and the primary website page, then returns reviewed rows with source links and timestamps. Its result can differ from suggestions based on your saved local audit. Neither path selects questions for a visibility check without your review.
+A visibility check is a sample of AI answers to questions you chose. OpenGEO keeps the answers and citations so you can inspect what each number means. It does not promise rankings or prove that a website edit caused a later change.
 
-Observations are immutable records. Audits retain fetched page text and technical facts; visibility checks retain answer text and citation annotations. Updating an opportunity's status changes its progress, not its originating observation. Draft changes keep prior revisions.
+## Mentions and citations
 
-During setup, sitemaps help discover public pages within the audit's crawl limit and robots policy. Sitemap URLs are not factual evidence: the page must still be fetched. Website-grounded question suggestions reference readable page records, exclude brand-led prompts and are reviewed before becoming tracked questions. Thin or unreadable evidence can produce no suggestions.
+| Metric | Meaning |
+| --- | --- |
+| Mention rate | Percentage of collected answers that mention your configured brand name or aliases |
+| Citation rate | Percentage of collected answers that link to your website or one of its subdomains |
+| Source coverage | Percentage of collected answers citing a particular domain or page |
 
-ChatGPT and OpenRouter suggestions use three separate AI passes: establish the website's purpose and current offerings or resources, draft audience questions, then independently review relevance and wording. Offering quotations must match the supplied page text; their attribution, context and current availability determine what they support. Questions start from the audience's knowledge, observable need or goal, rather than copying product specifications or assuming a diagnosis. These checks reduce errors; they do not prove search demand or guarantee that every suggestion fits the website. Review the rows before checking them. Your saved expertise can clarify scope; it does not substitute for page evidence. Each pass uses the same connection and approved spending ceiling.
+For example, if 8 of 10 collected answers mention your brand, the mention rate is 80%. This example explains the calculation; it is not a product result.
 
-The first ChatGPT check can suggest competitors from its collected answers. A candidate must be named in an answer and have a matching website citation in that answer. This conservative rule can miss competitors with no cited website; it avoids guessing domains or treating every source as a competitor. Candidates are added to comparisons only after user selection. Cited websites with an unconfirmed role appear under To review, separately from confirmed competitors and references. A reviewed parent website covers citations from its subdomains.
+**Missing answers stay missing.** If you request 10 answers and collect 8, the requested and missing counts stay visible. The two missing answers are not converted into answers with zero mentions.
 
-When SurfacedBy supports website role review, it receives your selected check's saved answers and citation links, reads the tracked website and cited websites, and returns competing offerings and references with their original answer IDs. This is analysis of client-supplied evidence, not a new visibility measurement or an authority score. The comparison list changes only when you select websites. Availability and supported request sizes are checked before approval; a partial or unrelated result is not published.
+Local matching uses brand names and aliases with Unicode word boundaries. A citation must link to the configured host or a subdomain. Generic brand names can produce ambiguous matches, so read the answer. This matching is not an entity classifier. SurfacedBy full checks retain the provider's canonical recognition and proprietary scores, with separate labels.
 
-Local presence matching uses configured brand names, aliases and the website with Unicode word boundaries. A citation must link to the configured host or a subdomain. Literal matching can confuse generic names; review the answer when recognition is ambiguous. It is not an entity classifier.
+## Where answers come from
 
-When SurfacedBy supports recommendations from saved answers, it reviews business scope and cited website roles before proposing and independently checking improvements. Existing-page edits, new resources and website changes remain distinct. Fresh owned-page excerpts have their own read dates and are stored separately from local audits. They travel with credential-free backups and project imports. Original answers retain their original dates and text. Selected pages are not a complete site inventory; check existing coverage before creating a new resource. An empty reviewed set is valid, and unsupported or incomplete results publish no recommendations.
+- **ChatGPT:** Responses API answers. Web search depends on the chosen model and account permissions.
+- **OpenRouter:** model-only API answers, without a search plugin.
+- **DataForSEO and supported SurfacedBy checks:** consumer-interface answers, labelled with their collection surface.
 
-Rates use collected answers as their denominator. The requested count and missing count remain visible. A failed request is never converted into an answer with zero mentions. Console full checks use the provider's canonical recognition rather than local reinterpretation.
+API answers can differ from a logged-in consumer chat app. Each observation records its prompt, provider, platform, returned model identity, locale, collection time, answer, citations and retrieval mode.
 
-When SurfacedBy advertises selected-question checks for the chosen platform, OpenGEO requests fresh answers for the exact approved question list and locale. It preserves original question IDs, citations and collection dates, then uses the same local presence matching as direct connections. These scraped observations retain their `consumer_interface` surface, distinct from API answers. Missing responses remain missing; failed or cancelled checks can retain answers already collected. This smaller check does not automatically purchase analysis. Full checks keep their existing price and analysis workflow.
+Citations come from provider annotations, not guessed links in answer text. Requesting search does not prove it ran: ChatGPT confirms search only when the final response contains a completed `web_search_call`. The interface marks other cases, including older records without that flag, as unconfirmed. See the [web search response contract](https://developers.openai.com/api/docs/guides/tools-web-search).
 
-Source coverage counts each collected answer once per domain or page, regardless of repeated citation annotations. Page fragments are combined; distinct paths and queries remain separate. Each source rate is bounded by 100%; rates across sources can sum to more than 100% because an answer can cite multiple sources. Unsafe or credential-bearing links are excluded from source tables.
+Supported SurfacedBy selected-question checks preserve the approved question IDs, locale, original answers, citations and collection dates, then use local presence matching. They do not automatically purchase analysis. Failed or cancelled checks can retain answers already collected; full checks keep their separate pricing and analysis workflow.
 
-Question coverage uses the saved request plan. Missing answers have no mention or citation rate. Older imports without that plan, and provider jobs with a different total request profile, show collected answers without inventing a per-question requested count. Editing today's questions does not rewrite the saved check.
+## Compare checks fairly
 
-History plots actual check timestamps in the current comparison scope. Incomplete checks create gaps, and a single check is a point rather than a fabricated trend. An accessible data table retains the counts and timestamps behind the chart.
+Use the same project identity, aliases, question list, locale, provider, platform, model and retrieval mode. OpenGEO stores a configuration digest for that scope, including confirmed-search status. Model aliases can change upstream, so the returned model identity is also retained.
 
-Comparability requires the same project identity, aliases, prompt list, locale, provider, platform and selected model. A configuration digest records that scope. Even comparable runs are samples, not proof of a causal effect. Provider model aliases can change versions; observations record returned model identities.
+The history chart uses actual check timestamps. Incomplete checks create gaps; one check is a point rather than a trend. The underlying counts and timestamps remain available in an accessible table.
 
-ChatGPT plan checks call the supported Responses API. Optional web search depends on the selected model and account/workspace permission. OpenRouter answer checks are model-only API calls without search plugins. Retrieval mode is stored with observations and participates in recheck comparison. Neither path reproduces a logged-in consumer chat interface. Citations come from provider annotations, never from guessed links in answer text.
+Question coverage uses the saved request plan. Editing today's questions does not rewrite an earlier check. Older imports without a request plan, or jobs with a different request profile, show collected answers without inventing per-question requested counts.
 
-Requesting web search does not prove it ran. ChatGPT observations record the requested mode separately from `webSearchConfirmed`, which requires a completed `web_search_call` in the final response. Absent confirmation, the interface says use is unconfirmed. Older observations without that flag also remain unconfirmed. Recheck comparisons include confirmed-search status. See [OpenAI's web search output contract](https://developers.openai.com/api/docs/guides/tools-web-search).
+Even comparable checks are samples. They can show a change worth investigating, but cannot isolate its cause.
 
-Deterministic audits describe facts such as missing metadata, heading structure or noindex. They do not claim that a missing tag causes AI invisibility. Recommendations are interpretations anchored to page or observation identifiers.
+## Read source coverage
 
-Research separates source-supported claims from unknowns and user-supplied expertise. Drafts and verification notes remain inspectable. The edited article receives a separate final review; unresolved claims stay visible with the draft. Manual edits mark that review as covering an earlier version. Unknown evidence identifiers and unrecognized citation links stop the content workflow. Human review remains required.
+Each answer counts once for a domain or page, even if it cites it repeatedly. Page fragments are combined; different paths and queries remain distinct. A source's coverage cannot exceed 100%, but coverage across sources can add up to more than 100% because one answer may cite several sites. Unsafe or credential-bearing links are excluded from source tables.
 
-AI revisions snapshot the saved draft and reuse its original source records. They create a separate draft with its own research, brief and final verification; the original is preserved. Save manual changes before requesting a revision.
+## Audits and suggested questions
 
-Cost receipts distinguish reported spend from conservative estimates held when a provider omits its cost. A held estimate is not a claim about the eventual charge. Cancellation stops local work and requests remote Console cancellation when a submitted check is known. A confirmed pending-check refund reduces the receipt; unconfirmed cancellation remains visibly unresolved.
+Audits preserve fetched page text and technical facts. Sitemaps help discover pages within the crawl budget and robots policy; a sitemap URL is not evidence until the page is fetched. Findings such as missing metadata or noindex describe page facts, not a proven cause of AI invisibility.
 
-Console managed suggestions and drafts require a price review before purchase. The approved maximum is held until a receipt confirms the charge and return of unused credits. A lost acknowledgement is looked up by the saved request identity before any retry. Missing confirmation pauses the run; it does not purchase a replacement. Saved results remain collectible when new generation is unavailable.
+Website-grounded questions reference readable page records and are reviewed before tracking. Thin or unreadable evidence can yield no suggestions. ChatGPT and OpenRouter use separate passes to understand the website, draft audience questions and review their relevance. Offering quotations must match the page text and support the current offering in context. Questions should reflect the audience's needs rather than repeat specifications or assume a diagnosis.
 
-Console findings identify their originating scan and evidence period. Its score is proprietary and distinct from local mention and citation rates. Older domain findings are not represented as new-scan evidence.
+These checks do not establish search demand. Your expertise can clarify scope but does not replace page evidence. Each pass uses the same connection and approved spending ceiling. SurfacedBy suggestions may read selected public pages and the primary page directly, returning dated sources; they can differ from suggestions based on a saved local audit. You review either set before selecting questions.
+
+## Competitors and opportunities
+
+The first ChatGPT check can suggest competitors named in its answers with a matching website citation in the same answer. This can miss an uncited competitor, but avoids guessing domains. You choose which sites enter the comparison. Unconfirmed websites remain under **To review**, separate from confirmed competitors and references. A reviewed parent website covers its subdomains.
+
+When supported, SurfacedBy role review reads selected saved answers and cited websites to distinguish competing offerings from references. It is analysis of supplied evidence, not a fresh measurement or an authority score. Supported request sizes and availability are checked before approval; partial or unrelated results are not published.
+
+Recommendations distinguish existing-page edits, new resources and website changes. SurfacedBy reviews business scope and website roles before proposing and independently checking improvements. Fresh page excerpts keep their own read dates and travel with credential-free backups and imports. Selected excerpts are not a complete site inventory: check existing coverage before creating a resource. Empty reviewed sets are valid; unsupported or incomplete results publish no recommendations.
+
+Original answers keep their dates and text. Changing an opportunity's progress does not change its source observation. Managed findings retain their originating scan and evidence period; older domain findings are not presented as new-scan evidence.
+
+## Drafts and revisions
+
+Content separates research, briefing, drafting, verification and editing, followed by a separate review of the edited article. Sources, unknowns, user expertise and unresolved findings remain inspectable. Unknown evidence IDs or unrecognized citation links stop the workflow.
+
+Manual edits mark the final review as covering an earlier version. AI revisions snapshot the saved draft and reuse its original sources, producing a separate draft with new research, brief and verification. Save manual changes before requesting a revision. Automated checks support your review; they do not replace a person checking factual claims.
+
+## Cost records
+
+Receipts distinguish reported spend from conservative estimates retained when a provider omits cost. A held estimate is not a confirmed charge. Managed suggestions and drafts require price review; approved funds remain held until a receipt confirms the charge and release of unused credit.
+
+A lost acknowledgement is checked using the saved request identity before any retry. Missing confirmation pauses the run rather than purchasing a replacement. Saved results can remain collectible when new generation is unavailable. Cancellation requests and confirmed refunds stay distinct from unresolved outcomes. See [connections and costs](connections.md#spending-pauses-and-cancellation).

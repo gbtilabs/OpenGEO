@@ -1,12 +1,20 @@
 # Source provenance
 
+This page records where OpenGEO's code, design and connection marks come from. For dependency licenses, see [third-party notices](../THIRD_PARTY_NOTICES.md).
+
+## Application and design
+
 OpenGEO was authored as an independent application with a separate runtime and database. No production infrastructure, private analysis implementation, private prompt library, customer data or hosted database dependency was extracted.
 
 The interface follows owned product conventions: Inter typography, primary blue `#0d6cf2`, neutral surfaces, sidebar navigation, tables, filters and evidence drawers. Components were implemented for this local application. The symbol was drawn from original SVG geometry; wordmark outlines use the openly licensed Inter font.
 
+## Libraries and protocol implementation
+
 Third-party libraries are installed from their public packages and recorded in `package-lock.json`. Preserve their notices. The ChatGPT adapter implements the documented protocol independently; it does not depend on a sample DevKit.
 
 Every future extraction must record its ownership, dependencies, license, privacy review and portable replacement for hosted functionality before copying.
+
+## Connection marks
 
 The SurfacedBy connection icon uses owned geometry from the publicly available SurfacedBy wordmark. It identifies the optional provider connection. No private code or asset metadata is included.
 

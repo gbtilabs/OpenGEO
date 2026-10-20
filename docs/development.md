@@ -1,19 +1,89 @@
-# Development and packaging
+# Develop OpenGEO
 
-The interface is React/TypeScript with Vite. Fastify owns workflows, SQLite, credentials and spending. Electron and Docker run the same backend. CLI and MCP access existing backend operations with the local session file.
+OpenGEO uses React and TypeScript for the interface, Fastify for the backend and SQLite for local storage. Electron and Docker run the same backend. Workflows, credentials and spending decisions belong to the server; the UI, CLI and MCP use those operations.
 
-For development, start `npm run dev` with `OPENGEO_SECRET_FILE` set, then `npm run web` in another terminal. The Vite server proxies `/api` to the local backend. Do not expose either server remotely.
+## Run from source
 
-`npm run build` compiles the interface and backend, CLI and MCP. `npm run desktop` starts Electron after building. `npm run package:desktop` bundles Chromium, rebuilds SQLite for the installed Electron runtime and verifies that native binding before packaging. Run `npm rebuild better-sqlite3` before returning to Node development/tests. Signing is required for a signed stable desktop release; an explicitly disclosed unsigned beta follows the separate gates in [release instructions](release.md).
+Requires Node.js 22 or newer. If a native dependency needs compilation, you will also need Python and your platform's C++ build tools.
 
-Native source builds require Python and the platform's C++ build tools on the maintainer's machine. Source and Electron headers compile outside the home directory and checkout, under `C:\OpenGEOBuild` on Windows or `/tmp/opengeo-build` on macOS/Linux. `OPENGEO_NATIVE_BUILD_ROOT` can select another writable neutral directory. Paths resolving into the home directory or checkout are refused, including redirected directories. Only verified native bindings return to the package; the temporary source and header directory is removed. Desktop users do not need these development tools.
+From a checkout:
 
-`node dist-server/cli.js projects` lists local projects. `workspace ID`, `job ID`, `run JSON` and `schedule JSON` use the shared backend and its budgets. `review ID` reads a paused run's approval requirements; `resume ID approval.json` submits an explicit review and optional increased ceiling; `cancel ID` stops work and requests provider cancellation. An approval file contains `reviewed` and optionally `maxCostUsd`. Configure MCP stdio with `node dist-server/mcp.js` and the same `OPENGEO_DATA_DIR` as the running app. MCP exposes the same start, read, review, resume and cancellation operations. Question discovery requires an audited website through `auditJobId`. Secrets are not accepted as command-line arguments.
+```sh
+npm ci
+node scripts/setup.mjs
+npm run build
+```
 
-SQLite migration version 1 creates projects, jobs, artifacts, workflow steps and settings. WAL provides durable writes. A runtime lock prevents multiple processes from independently recovering the same jobs. Opening an interrupted job preserves its uncertain provider step for user review.
+Set `OPENGEO_SECRET_FILE` to the absolute path of `.local/encryption-secret`, then start the server:
 
-Migration version 3 adds the optional closed-field usage outbox. Usage sharing is preselected for new setup and saved when setup finishes, unless the user changes it first. No events are sent from an unsaved preference. Existing choices and existing workspaces without a saved preference are preserved. The local session protects the preference, and exports exclude consent and queue state. The usage tests exercise a local test transport without contacting the collector or paid providers.
+```sh
+export OPENGEO_SECRET_FILE="$(pwd)/.local/encryption-secret"
+npm start
+```
 
-Audits default to 100 public pages per run. Users can choose a traversal budget up to 100,000 pages; it controls host load and job duration rather than projects or available features. Coverage records failed fetches and a remaining queue so a bounded crawl is not presented as the whole site. Browser rendering uses the same validated networking path and blocks WebSockets, service workers and downloads.
+In PowerShell, use `$env:OPENGEO_SECRET_FILE = (Resolve-Path .local/encryption-secret).Path` instead of `export`.
 
-Run `node node_modules/tsx/dist/cli.mjs scripts/analytics-ui-review.ts` to verify loaded evidence views with an isolated local backend and SQLite database. Clearly labelled synthetic records test chart gaps, repeated citations, question/source drill-downs, full-answer access, and layouts at 1360, 760 and 390 pixels. Captures stay outside the repository and are regression evidence, not public marketing examples. The runner and scheduler remain stopped; no paid provider requests run.
+Open <http://localhost:4318>. Keep `.local` private. The desktop app uses the operating-system credential store instead of this secret file.
+
+## Work on the interface
+
+With the secret configured, run `npm run dev` for the backend and `npm run web` in a second terminal for Vite. Vite proxies `/api` to the local backend. Do not expose either server remotely.
+
+Before submitting application changes, run:
+
+```sh
+npm test
+npm run build
+npm run check:public
+```
+
+Read [CONTRIBUTING.md](../CONTRIBUTING.md) for evidence, privacy and test requirements.
+
+## Package a desktop build
+
+`npm run desktop` starts Electron after building. `npm run package:desktop` builds the app, bundles Chromium, prepares SQLite for the installed Electron runtime and verifies the native binding before packaging.
+
+SQLite bindings for Node and Electron are not interchangeable. Run `npm rebuild better-sqlite3` before returning to Node development or tests after desktop packaging.
+
+Native sources and Electron headers compile outside your home directory and checkout: `C:\OpenGEOBuild` on Windows or `/tmp/opengeo-build` on macOS/Linux. Set `OPENGEO_NATIVE_BUILD_ROOT` to choose another neutral writable directory. The guard rejects paths inside the home directory or checkout, including redirected paths. Only verified bindings return to the package; temporary source and headers are removed.
+
+For a clean verification build on a matching Windows x64 machine:
+
+```sh
+node scripts/clean-build.mjs --desktop-installer --platform=win --arch=x64
+```
+
+On macOS, use `--platform=mac` and the host's `x64` or `arm64` architecture. Build output stays under `release/`. These builds are not signed stable releases. Follow the full [release checklist](release.md) before distributing them.
+
+## CLI and MCP
+
+Use the same `OPENGEO_DATA_DIR` as the running app. Its local session file authorizes access and must remain private. Credentials are never command-line arguments.
+
+| Command | Purpose |
+| --- | --- |
+| `node dist-server/cli.js projects` | List local projects |
+| `workspace ID` | Read a project's workspace |
+| `job ID` | Inspect a saved job |
+| `run JSON` | Start a workflow with the shared budgets |
+| `schedule JSON` | Save a schedule |
+| `review ID` | Read a paused run's approval requirements |
+| `resume ID approval.json` | Submit explicit review and an optional increased ceiling |
+| `cancel ID` | Stop work and request supported provider cancellation |
+
+The shortened commands in the table are subcommands of `node dist-server/cli.js`. An approval file contains `reviewed` and optionally `maxCostUsd`. Question discovery requires an audited website through `auditJobId`.
+
+For MCP stdio, launch `node dist-server/mcp.js`. It exposes the same start, read, review, resume and cancellation operations.
+
+## Runtime and storage
+
+SQLite migration 1 creates projects, jobs, artifacts, workflow steps and settings. WAL preserves durable writes. A runtime lock prevents separate processes from recovering the same work. An interrupted job retains an uncertain provider step for user review.
+
+Migration 3 adds the optional closed-field usage outbox. New setup preselects sharing, but no events are sent until the preference is saved. Existing choices and existing workspaces without a saved choice are preserved. The local session protects the preference; exports exclude consent and queue state. Usage tests use a local transport, not the live collector or a paid provider.
+
+Audits default to 100 public pages. The traversal budget can be raised to 100,000 to control host load and duration; it is not a project or feature limit. Coverage retains failed fetches and remaining queued pages. Browser rendering uses the validated networking path and blocks WebSockets, service workers and downloads.
+
+## Review UI changes
+
+`node node_modules/tsx/dist/cli.mjs scripts/analytics-ui-review.ts` checks loaded evidence views in an isolated local runtime. Its clearly labelled synthetic records cover chart gaps, repeated citations, drill-downs, full answers and layouts at 1360, 760 and 390 pixels. Captures stay outside the repository and are regression evidence, not marketing examples. The runner and scheduler stay stopped; no paid requests run.
+
+Public product screenshots follow [SCREENSHOT_PROFILE.md](../SCREENSHOT_PROFILE.md), using a real audit of example.com and no private account data.

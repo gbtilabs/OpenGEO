@@ -1,4 +1,6 @@
-# Release gates
+# Release checklist for maintainers
+
+Use this checklist before publishing source or attaching a new installer. For end-user setup, see the [installation guide](distribution.md).
 
 Public source must exclude development notes, private configuration, review receipts and runtime data. `npm run check:public` checks tracked paths and all Git history, including files deleted from the current tree, and flags conversation fragments and change narration in current source comments. Manual review must also examine prompts and other prose for internal dialogue and topic bias. These checks precede secret and artifact review. Keep development history separate when preparing the first public source snapshot; do not bypass a failed gate by ignoring an old commit.
 
@@ -6,13 +8,17 @@ Public v1 requires the complete workflow, working desktop/Docker distributions, 
 
 ## GitHub beta scope
 
-Version 0.1.0-beta.1 is an explicitly unsigned Windows x64 beta, with source and locally built Docker installation available separately. Microsoft Store and Mac App Store enrollment are deferred. Only attach binaries whose exact payload has passed confidentiality review and whose actual installation and local workflow have been exercised. List the tested host and limitations accurately; an isolated profile on a maintainer machine is not a clean-machine certification. Do not attach untested macOS or Linux desktop builds merely because source tests passed there.
+Version 0.1.0-beta.1 includes an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
+
+Only attach binaries whose exact payload passed confidentiality review and whose actual installation and local workflow were exercised. State the tested host and limitations: an isolated maintainer profile or native hosted runner is not a clean-machine certification. Do not attach untested platforms merely because source tests passed there.
 
 The beta release notes must disclose signing status, manual updates, local storage/backup behavior, optional usage sharing and external provider costs. Managed provider output/cost, financial recovery, activation, deployed usage collection and historical import remain separate acceptance gates. A beta release cannot relabel those gates as passed. They remain required before promoting the corresponding managed functionality as production-ready or declaring full v1 complete.
 
 Create a GitHub prerelease against the exact reviewed source commit. Include `SHA256SUMS.txt`, a public `release-manifest.json` with source commit and actual artifact hashes, and installation instructions. Never include private audit receipts, detector output, confidential matching values or workstation paths. After upload, download the actual public assets and verify their hashes against the reviewed files before announcing the release. Publishing a checksum is not a substitute for signing or malware/security review.
 
 ## Source and artifact review
+
+### 1. Check source, dependencies and platform behavior
 
 Installation configures a local pre-push boundary check. CI also checks the full
 history. These checks include hidden and ignored private source files; dependency
@@ -21,9 +27,13 @@ secret scanning and manual review, and do not certify that every public file is 
 
 Run `npm test`, `npm run build` and `npm run audit:deps`. The dependency gate fails on any advisory in runtime dependencies. A build-tool advisory passes only when `scripts/dependency-dispositions.json` records a review for its exact locked version, dependents and the condition that keeps the affected code unused; any change to those makes it fail again. Use clean environments containing public build settings only. For stable v1, package Windows x64 and macOS arm64/x64; build Docker Linux amd64/arm64, and install and operate each target on a clean machine. Verify signing identities, notarization and provider eligibility before claiming signed stable acceptance. The narrower GitHub beta follows its explicit platform and signing scope above.
 
+### 2. Scan source and keep review material private
+
 Run `npm run audit:source` before the first public push. The auditor inventories hidden and untracked files, scans the working tree with pinned Gitleaks and TruffleHog images, and scans all Git refs once a reviewed commit exists. TruffleHog credential verification is disabled and scanner containers have no network. Targeted matching accepts `OPENGEO_CONFIDENTIAL_VALUES_FILE`, a JSON array stored outside the public repository; matching includes raw, URL-encoded, hex and base64 forms, including UTF-16 little-endian and big-endian binary representations.
 
 On Windows x64, `OPENGEO_SCANNER_DIR` can select the pinned native release binaries instead. Their exact SHA256 digests are checked before execution, credential verification remains disabled, and receipts explicitly record that the native process is not network isolated. Run native scanners only on the maintainer's trusted machine. Scanner reports and confidential matching inputs remain outside the repository in either mode.
+
+### 3. Review the exact unpacked package
 
 Unpack installers, Electron ASAR archives, Docker layers, release archives and published packages into private audit directories. Run `npm run audit:release -- --artifact PATH` for each unpacked tree. Include image configuration/history and bundle source maps when present. Archives left packed are unresolved findings. Repeat against the exact downloads, not an earlier build.
 
@@ -39,6 +49,8 @@ Review a fresh checkout of the exact source commit. Git attributes keep text fil
 
 Every unpacked artifact file receives a hash, including large bundled executables. Files too large for targeted text matching remain review findings until their exact bytes and vendor provenance have been reviewed. A hash alone is not a confidentiality review.
 
+### 4. Verify native binaries and scanner coverage
+
 Windows native SQLite preparation removes absolute PDB lookup paths only from validated, unsigned PE CodeView debug records. The GUID, age and executable code remain intact. Signed binaries require a clean upstream build. Preparation refuses any remaining workspace or home-directory path, including compiled module registration. Compile native modules in a neutral release directory with unchanged dependency sources. Native runtime verification runs after this preparation; old artifacts are never retroactively approved.
 
 Preparation inventories every `.node` file recursively, including alternate cache filenames. Desktop packages exclude the native build cache and retain the verified runtime module. Audit the exact installer payload to confirm that unused native caches are absent; checking only the module loaded at runtime does not cover the distribution.
@@ -49,4 +61,8 @@ For packed archive findings, map the reported byte or line range back to the exa
 
 History findings retain their commit identity. A historical false-positive disposition requires the full commit hash and the SHA256 of that commit's file blob. A current source disposition never covers an older revision. Native Windows history scans use the local-drive URI format supported by the pinned scanner.
 
+### 5. Publish only the reviewed files
+
 Enable private vulnerability reporting on the repository. Complete naming/logo clearance and contribution/license review. Build and test the reviewed commit again, audit the resulting hashes, then publish only those artifacts.
+
+Keep large build and release transfers on hosted runners when local bandwidth is limited. An anonymous full-download check can also run there, returning only its small hash receipt. That receipt must bind the actual successful run, workflow revision, source and complete downloaded bytes; a successful upload or server digest alone is not a full-download check.

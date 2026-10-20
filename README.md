@@ -1,101 +1,69 @@
 # OpenGEO
 
-## Open-source generative engine optimization (GEO) for your website
+**Track your brand in AI answers. See what to improve next.**
 
-OpenGEO is a free AI visibility tool that runs on your computer. Ask the questions your customers ask, see whether AI answers mention your brand or cite your pages, audit your site, and turn that evidence into content worth citing. Use the ChatGPT plan you already have, or connect your own providers.
+OpenGEO is a free, open-source app for website owners and agencies. Find out whether AI answers mention your business, inspect the pages they cite, and work on your site's next improvement. Your projects, evidence and drafts stay in a workspace on your computer.
 
-For site owners and agencies: keep several websites, their evidence and improvement work in one local workspace.
+[Download for Windows or Mac](#download) | [Getting started](docs/getting-started.md) | [Connections](docs/connections.md) | [Self-hosting](docs/distribution.md#docker)
 
-**Audit -> Measure -> Diagnose -> Act -> Create -> Recheck.**
+![OpenGEO workspace after auditing example.com, showing page checks and next steps](assets/workspace-preview.webp)
 
-- **AI visibility tracking.** Mention rate and citation rate for the questions you choose, with every answer and cited source kept for review.
-- **Site audit.** Page retrieval, titles, summaries, headings, indexing instructions, canonical URLs, thin pages and structured data, read from your sitemap while respecting robots.txt.
-- **Opportunities.** Pages to improve, new resources to create and site changes, each tied to the answers and sources behind it.
-- **Content.** Briefs and drafts grounded in your audited pages and cited sources, with factual claims flagged for review.
-- **Rechecks.** The same questions, model and locale, so changes compare like with like.
+*A real local audit of example.com. No connected account or AI-generated results are used in this screenshot.*
 
-Generative engine optimization (GEO), also called answer engine optimization (AEO) or AI search optimization, is the work of making your pages easy for AI answers to find, understand and cite.
+## What you can do
 
-![OpenGEO dashboard showing a real audit of the public example.com site](assets/dashboard-preview.png)
+- **Check your AI visibility.** Choose the questions your customers ask. See which answers mention your brand and which link to your website. Open the full answers and citations behind the numbers.
+- **Audit your website.** Inspect titles, descriptions, headings, indexing instructions, canonical URLs and structured data. Start with a local audit before connecting an AI provider.
+- **Find your next improvement.** Review suggested page updates, new resources and site changes alongside the evidence behind them.
+- **Write with your sources in view.** Develop briefs and drafts from your pages and collected evidence. Keep the sources and factual review notes with each draft.
+- **Check again after an update.** Repeat the same questions, model and locale, and compare the collected answers over time.
+- **Manage several websites.** Keep separate projects, export your work and make backups. OpenGEO has no software-imposed project limit.
 
-OpenGEO is free software. Your projects have no artificial limits, and no cloud account is required. External providers charge for their services.
+This work is often called generative engine optimization (GEO) or answer engine optimization (AEO). OpenGEO gives you a way to measure and work on it; it cannot promise a mention, citation or ranking.
 
-**Public beta:** [download for Windows or Mac](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.1), or run from source or Docker below. Choose Windows x64, Mac Apple Silicon (arm64) or Mac Intel (x64). The Windows installer is unsigned; Mac previews are ad hoc signed and not notarized. Operating-system warnings or organization policies may prevent installation. Read the [installation and verification instructions](docs/distribution.md). Both Mac architectures were tested on macOS 15; older versions are unverified. Linux desktop downloads are not included. This is an early release, not a signed stable v1.
+## Download
 
-Local audits and project storage work without a provider. AI features require an eligible connected service and may incur charges. SurfacedBy managed operations depend on server capabilities and remain experimental; a working local audit does not establish live billing, cancellation, usage collection or historical-import acceptance. See the [beta release notes](docs/releases/v0.1.0-beta.1.md).
+The desktop app includes its runtime and browser. You do not need Node.js, Docker or an Apple developer account.
 
-## Run locally
+| Your computer | Download |
+| --- | --- |
+| Windows x64 | [Windows installer](https://github.com/surfacedby/OpenGEO/releases/download/v0.1.0-beta.1/OpenGEO-0.1.0-beta.1-windows-x64.exe) |
+| Mac with an Apple M-series chip | [Apple Silicon DMG](https://github.com/surfacedby/OpenGEO/releases/download/v0.1.0-beta.1/OpenGEO-0.1.0-beta.1-macos-arm64.dmg) |
+| Mac with an Intel processor | [Intel DMG](https://github.com/surfacedby/OpenGEO/releases/download/v0.1.0-beta.1/OpenGEO-0.1.0-beta.1-macos-x64.dmg) |
 
-### Docker
+**This is a public beta.** Windows is unsigned; Mac downloads are ad hoc signed and not notarized. Your computer may show a warning or block installation. Both Mac versions were tested on macOS 15. Read the [installation guide](docs/distribution.md) for checksums, first-launch instructions and current limitations. Linux users can [run from source or use Docker](docs/distribution.md#docker).
 
-Requires Docker with Compose. From a checkout:
+## Your first session
 
-```sh
-node scripts/setup.mjs
-docker compose up --build -d
-```
+1. Open the app and add your website. Choose **Use local audits only** if you want to try it without a connection.
+2. Explore **Site Audit** to see what OpenGEO found on your public pages.
+3. Connect an [eligible AI service](docs/connections.md), review your customer questions and run a visibility check.
+4. Read **Responses** and **Sources**, then use **Opportunities** and **Content** to plan an update. Review a draft before publishing it.
 
-Open <http://localhost:4318>. Keep the `.local` folder private and preserve the Docker volume. If Node is unavailable, generate at least 32 random bytes into `.local/encryption-secret` using your operating system's secure random generator, make the file readable (mode 644) and keep the `.local` folder owner-only (mode 700).
+![Site Audit showing page checks and four suggested improvements](assets/audit-preview.webp)
 
-### Development
+*The audit checks what your pages expose to crawlers. AI visibility checks are a separate step.*
 
-Requires Node.js 22 or newer:
+## Choose your connection
 
-```sh
-npm ci
-node scripts/setup.mjs
-npm run build
-```
+Use an eligible **ChatGPT subscription**, connect **OpenRouter**, or pair **DataForSEO with OpenRouter** for measurement, analysis and content. An optional **SurfacedBy API** connection offers the managed operations available on your server.
 
-Set `OPENGEO_SECRET_FILE` to the absolute path of `.local/encryption-secret`, then run `npm start`. The desktop build uses the operating-system credential store instead of this file. See [development](docs/development.md) for packaging and the frontend development server.
+Local audits and project storage are free to use without a provider. Connected services have their own eligibility rules, limits and charges. OpenGEO asks for spending approval where required and never silently switches you to a paid provider. [Compare the connections](docs/connections.md).
 
-## A useful first session
+## Your workspace stays yours
 
-1. Connect ChatGPT or your preferred provider. You can also choose local audits only.
-2. Add your website. OpenGEO reads public pages and sitemaps locally, then uses your connected ChatGPT plan to suggest relevant customer questions. Edit, add or unselect individual questions.
-3. Check your selected questions. Read the answers and citations, then choose which evidence-supported competitors to follow. Other paid connections require a spending approval before checks.
-4. Review Opportunities and create a draft in Content. Use your own expertise and audited sources to develop a brief and draft.
-5. Review factual claims before publishing. Recheck the same questions, model and locale.
+Projects and saved evidence live in local SQLite storage. Credentials are encrypted separately and excluded from project exports. Selected AI services receive the inputs needed for the work you request.
 
-No rankings or growth are guaranteed. An observed change does not prove that a particular edit caused it.
+Optional usage sharing is preselected during setup. Uncheck it before finishing, or turn it off in **Settings > Data & privacy**. It shares activity counts, not your websites, prompts, answers or credentials. [Read the privacy details](docs/privacy.md).
 
-## Connect only what you need
+## Guides and contributing
 
-| Connection | Useful for | Cost and limits |
-| --- | --- | --- |
-| ChatGPT | ChatGPT API answer checks, analysis and content | Your eligible plan and granted permissions are required. Plan limits apply; no separate API key. Web search depends on model and account permissions. |
-| SurfacedBy API | Managed checks and processed insights; reviewed question suggestions and drafts when available | Pay as you go. OpenGEO checks which operations your connection supports before offering them. |
-| DataForSEO + OpenRouter | Direct measurement with AI analysis and content | Both connections are needed for the full workflow. Each provider charges for its own usage. |
-| OpenRouter | API answer checks, analysis and content with model selection | Your account pays the selected model's usage charges. OAuth and existing keys are supported. |
+- [Getting started](docs/getting-started.md): from your first audit to a recheck.
+- [Installation and self-hosting](docs/distribution.md): downloads, Docker, updates and backups.
+- [Connections and costs](docs/connections.md): choose a service and understand what it collects.
+- [How measurements work](docs/methodology.md): mentions, citations, missing answers and comparisons.
+- [Development](docs/development.md): run from source, use the CLI or connect MCP.
 
-OpenGEO never silently switches to a paid provider. If access expires or a quota is reached, affected work pauses with its progress preserved. Reset times are shown only when supplied by the provider.
+Found a bug or have an idea? [Open an issue](https://github.com/surfacedby/OpenGEO/issues). Contributions to the app, documentation and accessibility are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities through the [security policy](SECURITY.md).
 
-ChatGPT uses an independent implementation of the [published subscription-sharing protocol](https://developers.openai.com/siwc/token-sharing-open-source/). The example DevKit is not bundled. Eligibility and preview requirements can change. Self-hosted sign-in requires the browser to reach the callback on the host running OpenGEO; use a documented local connection or tunnel.
-
-## Evidence you can inspect
-
-Observations record the prompt, provider, model, locale, retrieval mode, collection time, answer and citation URLs. ChatGPT and OpenRouter collect API answers, which can differ from consumer applications. DataForSEO and supported SurfacedBy checks collect consumer-interface answers; each result keeps its collection surface. ChatGPT checks can request web search; OpenRouter checks use model-only answers without a search plugin. Citation links come from the provider's answer evidence. Failed checks are missing observations, not absent mentions.
-
-Mention rate is the percentage of collected answers detecting the configured brand or aliases. Citation rate is the percentage linking to the configured website. Local matching is literal; generic brand names need careful review. Console recognition and proprietary scores retain their own labels and provenance.
-
-Content uses research, briefing, drafting, verification, editing and a final review of the edited article. Request a revision while retaining the original draft and its sources. Unresolved findings stay with the draft. Automated verification helps review; it does not replace a human checking factual claims. [Methodology](docs/methodology.md) explains the boundaries.
-
-## Your installation, your data
-
-SQLite stores projects and workflow progress locally. Provider credentials are encrypted separately and excluded from project exports. Optional usage sharing is preselected during new setup; you can uncheck it before finishing or turn it off in Settings. Existing choices are preserved. It shares activity counts with SurfacedBy without websites, prompts, content, account details or credentials. Selected provider calls send the task inputs needed for that operation. Crawling sends requests to your public website.
-
-Draft edits are protected locally as you work. After a restart, choose whether to restore, export or discard them. Project exports contain saved drafts; save recovered edits before exporting a project.
-
-Daily and weekly schedules persist across restarts. Desktop schedules run while the application remains open, including in the tray. Docker can operate continuously on your own host. Missed schedules coalesce into one fresh run. [Privacy and operations](docs/privacy.md).
-
-## Contribute
-
-Useful contributions include reproducible provider fixtures, clearer evidence views, audit rules with documented reasoning and accessibility improvements. Read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Original application code is MIT licensed; bundled dependency licenses remain applicable.
-
-## Optional managed services
-
-Keep working locally while connecting Console for managed measurement, or use [SurfacedBy](https://surfacedby.com) for hosted operation and collaboration. These are optional paths. Local exports remain available independently of a managed account.
-
-### Credits
-
-Maintained by SurfacedBy. Built with open-source libraries listed in [third-party notices](THIRD_PARTY_NOTICES.md).
+Maintained by [SurfacedBy](https://surfacedby.com). Original application code is [MIT licensed](LICENSE); bundled libraries keep their own [licenses and notices](THIRD_PARTY_NOTICES.md).

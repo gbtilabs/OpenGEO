@@ -1,27 +1,61 @@
-# Privacy, budgets and operation
+# Privacy and your data
 
-Projects and evidence reside in SQLite on your installation. Encrypted provider credentials reside in a separate vault. The local session file authorizes CLI/MCP access and must stay private. Provider status endpoints never return credentials.
+OpenGEO stores your projects and evidence on your installation. Connecting an AI service sends that service the inputs needed for the work you request. You can use local audits and storage without a hosted account or usage sharing.
 
-No telemetry or hosted authentication is required. Crawling requests public pages. ChatGPT and OpenRouter receive instructions, source excerpts and project context for selected content tasks. DataForSEO receives prompts, models and supported locale parameters. Console receives domain configuration and explicitly requested tasks. When you request role review or recommendations from saved answers, Console also receives the selected answers, their original identifiers and timestamps, citation links and selected owned page URLs. It reads those public pages and returns dated excerpts. Review each provider's own data policies.
+## What stays on your installation
+
+- Projects, fetched page evidence, collected answers, drafts and workflow progress are stored in SQLite.
+- Provider credentials are encrypted in a separate vault. Status endpoints do not return them.
+- The local session file authorizes CLI and MCP access. Keep it private.
+- Project exports and ordinary backups contain saved project work, but no vault, OAuth token or encryption secret.
+
+Backups can still contain sensitive evidence. Keep them private. Restore through the preview/import interface: imports create independent projects, keep the original collection timestamps and do not replay historical paid work.
+
+## What connected services receive
+
+| Service | Data sent for work you request |
+| --- | --- |
+| Your website | Requests for public pages and sitemaps during an audit |
+| ChatGPT or OpenRouter | Prompts, instructions, source excerpts and project context needed for the selected operation |
+| DataForSEO | Prompts, models and supported locale parameters |
+| SurfacedBy API | Domain configuration and requested tasks. Evidence-based role reviews and recommendations also send selected saved answers, their IDs and timestamps, citation links and selected owned page URLs. |
+
+SurfacedBy may read those public pages and return dated excerpts. Each provider has its own data policy; check it before submitting sensitive material.
 
 ## Optional usage sharing
 
-Usage sharing is **preselected during new setup**. You can uncheck the optional checkbox before finishing setup, or change it anytime in Settings under Data & privacy. No activity is sent from an unsaved preference. Finishing setup saves the displayed choice. Existing saved choices are never overridden; existing workspaces without a saved preference stay off. Sharing is independent of provider connections and does not affect features or output quality.
+**Usage sharing is preselected during new setup.** Uncheck it before finishing setup, or change it in **Settings > Data & privacy**. It does not affect features or output quality and is separate from provider connections.
 
-If enabled, OpenGEO sends a closed set of activity names, UTC dates, the providers used for successful workflows, app version, distribution type and operating system to SurfacedBy. Random event identifiers prevent retry duplicates; a random installation identifier counts returning installations. The receiver stores a hash of the installation identifier and reports aggregate counts in its private admin area. These are participating installations, not identified people or paying customers.
+Nothing is sent from an unsaved preference. Finishing setup saves the choice shown. Existing saved choices are preserved; existing workspaces without a saved choice stay off.
 
-Websites, prompts, answers, content, citations, project identifiers, models, account details, credentials and free-form properties are excluded. Project exports and ordinary backups exclude the usage preference, installation identifier and pending usage records. No activity from before sharing was enabled is backfilled; imported historical work does not count as a new completion.
+### Fields sent when enabled
 
-Sending is limited to 40 events per installation per day, in batches, with at most 256 queued records and seven days of local retry history. Failure never interrupts work. Turning sharing off aborts the active request and removes queued records and the local identifier. Starting again creates a new identifier. A request already accepted by the receiver cannot be recalled by aborting it.
+OpenGEO sends a fixed set of activity names, UTC dates, providers used for successful workflows, app version, distribution type and operating system to SurfacedBy. Random event IDs prevent duplicate retries. A random installation ID counts returning installations; the receiver stores its hash and reports aggregate counts in a private admin area. These counts represent participating installations, not identified people or paying customers.
 
-The receiver keeps a rolling 90 calendar days of activity with hourly expiry, including when collection is disabled. Temporary scheduler outages can delay removal until recovery. Short-lived, daily salted network-address hashes are used only for abuse counters, not the usage ledger or admin reports; these expire within a day. The ingest endpoint is excluded from request-address access logs and error/transaction payload capture. Hosting networks may observe connection metadata when handling HTTPS traffic. Previously accepted records expire with retention; turning sharing off does not erase previously accepted aggregates immediately.
+**Excluded:** websites, prompts, answers, content, citations, project IDs, models, account details, credentials and free-form properties.
 
-Website icons load through the local backend from websites already in your project or citation evidence. If a direct icon is unavailable, cached icon lookup is enabled by default: Google's icon service receives the individual public hostname and can observe this installation's network address. Requests contain no provider credentials, project identifiers, prompts, content or referring page. Turn this fallback off in Settings under Data & privacy; disabling it aborts active cache requests and stops subsequent lookups. A request already received by Google cannot be recalled. Images already displayed or cached by the browser can remain visible until refresh. The fixed service is optional and has no guaranteed availability. Only bounded raster icons are displayed, with a local monogram fallback when unavailable. Icons are cached in memory; offline operation does not depend on them.
+Exports and ordinary backups also exclude the sharing preference, installation ID and pending usage records. Activity from before sharing was enabled is not backfilled. Imported historical work does not count as a new completion.
 
-A run budget controls whether additional provider requests start. Direct DataForSEO requests have no per-request USD ceiling, so a request can cost more than its estimate. Configure a conservative request estimate and use provider-side spending controls. OpenRouter calls have bounded output and catalog-based estimates; model rates may change. SurfacedBy full checks use the server's credit preview before submission. Managed selected-question checks require approval of a server quote, hold the approved maximum and return a final receipt with unused credits released. OpenGEO offers only operations supported by the connected service.
+### Limits, retention and turning it off
 
-Completed paid work is retained. An interrupted request with uncertain completion is never automatically replayed. Review the provider account before approving a retry. No provider is silently substituted. Cancellation stops additional work but cannot undo a completed provider charge.
+- At most 40 events are sent per installation per day, in batches.
+- The local queue holds at most 256 records and seven days of retry history. Sending failures do not interrupt your work.
+- Turning sharing off aborts the active request and removes the local queue and installation ID. Enabling it again creates a new ID.
+- An already accepted request cannot be recalled. Accepted records remain subject to retention; disabling sharing does not immediately remove past aggregates.
+- The receiver keeps a rolling 90 calendar days of activity, with hourly expiry. A scheduler outage can delay removal until it recovers.
 
-Schedules use a selected time zone and monthly spending ceiling. Outstanding scheduled jobs reserve their approved budgets. Desktop schedules require the app to remain running; closing the window leaves it in the tray. Quitting stops execution. Docker supports continuous execution on your host.
+Daily salted network-address hashes are used for short-lived abuse counters only, not usage records or admin reports, and expire within a day. The ingest endpoint is excluded from request-address access logs and error/transaction payload capture. Hosting networks can still observe connection metadata when handling HTTPS traffic.
 
-Ordinary backups contain project exports, not vaults, OAuth tokens or encryption secrets. Restore project exports through the preview/import interface. Imports create independent projects, preserve original collection timestamps and never enqueue historical paid work. Keep sensitive evidence backups private even though they contain no provider credentials.
+## Website icons
+
+OpenGEO loads icons through its backend for websites already in your projects or citation evidence. If a direct icon is unavailable, cached lookup is enabled by default: Google's icon service receives the public hostname and can observe your network address. It receives no provider credentials, project IDs, prompts, content or referring page.
+
+Disable the fallback in **Settings > Data & privacy** to abort active cache requests and stop future lookups. A request already received by Google cannot be recalled; browser-cached images may remain until refresh. Only bounded raster icons are displayed, with a local monogram when unavailable. The cache is in memory and offline operation does not depend on it.
+
+## Paid work and schedules
+
+Run budgets control whether another request starts. They cannot reverse a completed charge. Direct DataForSEO requests can exceed an estimate, so use conservative estimates and provider-side spending controls. OpenRouter uses bounded output and model-rate estimates. Managed work uses the supported server preview or quote. See [connections and costs](connections.md#spending-pauses-and-cancellation).
+
+OpenGEO retains completed paid work and never automatically replays a request with an uncertain outcome. Review the provider account before approving a retry. It does not silently switch providers.
+
+Schedules use your selected time zone and monthly ceiling. Pending scheduled jobs reserve approved budgets. Desktop schedules run while the app is open, including in the tray; **Quit** stops them. Docker can run continuously on your host.
