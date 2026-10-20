@@ -4,7 +4,7 @@ The interface is React/TypeScript with Vite. Fastify owns workflows, SQLite, cre
 
 For development, start `npm run dev` with `OPENGEO_SECRET_FILE` set, then `npm run web` in another terminal. The Vite server proxies `/api` to the local backend. Do not expose either server remotely.
 
-`npm run build` compiles the interface and backend, CLI and MCP. `npm run desktop` starts Electron after building. `npm run package:desktop` bundles Chromium, rebuilds SQLite for the installed Electron runtime and verifies that native binding before packaging. Run `npm rebuild better-sqlite3` before returning to Node development/tests. Signing remains a release gate.
+`npm run build` compiles the interface and backend, CLI and MCP. `npm run desktop` starts Electron after building. `npm run package:desktop` bundles Chromium, rebuilds SQLite for the installed Electron runtime and verifies that native binding before packaging. Run `npm rebuild better-sqlite3` before returning to Node development/tests. Signing is required for a signed stable desktop release; an explicitly disclosed unsigned beta follows the separate gates in [release instructions](release.md).
 
 Native source builds require Python and the platform's C++ build tools on the maintainer's machine. Source and Electron headers compile outside the home directory and checkout, under `C:\OpenGEOBuild` on Windows or `/tmp/opengeo-build` on macOS/Linux. `OPENGEO_NATIVE_BUILD_ROOT` can select another writable neutral directory. Paths resolving into the home directory or checkout are refused, including redirected directories. Only verified native bindings return to the package; the temporary source and header directory is removed. Desktop users do not need these development tools.
 

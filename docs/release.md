@@ -4,12 +4,22 @@ Public source must exclude development notes, private configuration, review rece
 
 Public v1 requires the complete workflow, working desktop/Docker distributions, provider verification, Console billing verification and zero unresolved confidentiality findings.
 
+## GitHub beta scope
+
+Version 0.1.0-beta.1 is an explicitly unsigned Windows x64 beta, with source and locally built Docker installation available separately. Microsoft Store and Mac App Store enrollment are deferred. Only attach binaries whose exact payload has passed confidentiality review and whose actual installation and local workflow have been exercised. List the tested host and limitations accurately; an isolated profile on a maintainer machine is not a clean-machine certification. Do not attach untested macOS or Linux desktop builds merely because source tests passed there.
+
+The beta release notes must disclose signing status, manual updates, local storage/backup behavior, optional usage sharing and external provider costs. Managed provider output/cost, financial recovery, activation, deployed usage collection and historical import remain separate acceptance gates. A beta release cannot relabel those gates as passed. They remain required before promoting the corresponding managed functionality as production-ready or declaring full v1 complete.
+
+Create a GitHub prerelease against the exact reviewed source commit. Include `SHA256SUMS.txt`, a public `release-manifest.json` with source commit and actual artifact hashes, and installation instructions. Never include private audit receipts, detector output, confidential matching values or workstation paths. After upload, download the actual public assets and verify their hashes against the reviewed files before announcing the release. Publishing a checksum is not a substitute for signing or malware/security review.
+
+## Source and artifact review
+
 Installation configures a local pre-push boundary check. CI also checks the full
 history. These checks include hidden and ignored private source files; dependency
 and build directories receive their separate distribution review. They supplement
 secret scanning and manual review, and do not certify that every public file is safe.
 
-Run `npm test`, `npm run build` and `npm run audit:deps`. The dependency gate fails on any advisory in runtime dependencies. A build-tool advisory passes only when `scripts/dependency-dispositions.json` records a review for its exact locked version, dependents and the condition that keeps the affected code unused; any change to those makes it fail again. Use clean environments containing public build settings only. Package Windows x64 and macOS arm64/x64; build Docker Linux amd64/arm64. Install and operate each target on a clean machine. Signing identities, notarization and provider eligibility must be verified before publishing downloads.
+Run `npm test`, `npm run build` and `npm run audit:deps`. The dependency gate fails on any advisory in runtime dependencies. A build-tool advisory passes only when `scripts/dependency-dispositions.json` records a review for its exact locked version, dependents and the condition that keeps the affected code unused; any change to those makes it fail again. Use clean environments containing public build settings only. For stable v1, package Windows x64 and macOS arm64/x64; build Docker Linux amd64/arm64, and install and operate each target on a clean machine. Verify signing identities, notarization and provider eligibility before claiming signed stable acceptance. The narrower GitHub beta follows its explicit platform and signing scope above.
 
 Run `npm run audit:source` before the first public push. The auditor inventories hidden and untracked files, scans the working tree with pinned Gitleaks and TruffleHog images, and scans all Git refs once a reviewed commit exists. TruffleHog credential verification is disabled and scanner containers have no network. Targeted matching accepts `OPENGEO_CONFIDENTIAL_VALUES_FILE`, a JSON array stored outside the public repository; matching includes raw, URL-encoded, hex and base64 forms, including UTF-16 little-endian and big-endian binary representations.
 

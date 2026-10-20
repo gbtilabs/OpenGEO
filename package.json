@@ -1,10 +1,15 @@
 {
   "name": "opengeo",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "type": "module",
   "description": "Open-source generative engine optimization (GEO) workspace: track AI visibility, mentions and citations, audit your site and create evidence-based content.",
   "license": "MIT",
+  "author": {
+    "name": "SurfacedBy",
+    "url": "https://surfacedby.com"
+  },
+  "homepage": "https://github.com/surfacedby/OpenGEO",
   "engines": {
     "node": ">=22"
   },
@@ -63,6 +68,7 @@
   "build": {
     "appId": "org.opengeo.desktop",
     "productName": "OpenGEO",
+    "copyright": "Copyright (c) 2026 OpenGEO contributors",
     "asar": true,
     "npmRebuild": false,
     "extraResources": [
@@ -92,7 +98,11 @@
     },
     "win": {
       "target": "nsis",
+      "artifactName": "OpenGEO-${version}-windows-${arch}.${ext}",
       "icon": "assets/app-icon.ico"
+    },
+    "nsis": {
+      "runAfterFinish": false
     },
     "mac": {
       "target": [

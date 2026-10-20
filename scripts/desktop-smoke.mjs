@@ -32,6 +32,7 @@ try {
   await page
     .getByRole("button", { name: "Continue", exact: true })
     .click();
+  await page.getByRole("checkbox", { name: "Help improve OpenGEO by sharing usage", exact: true }).uncheck();
   await page.getByRole("button", { name: "Open workspace & audit", exact: true }).click();
   await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
   const runtime = JSON.parse(readFileSync(join(directory, "runtime.json"), "utf8"));
@@ -42,6 +43,8 @@ try {
     return response.json();
   };
   const projects = await api("/projects");
+  const consent = await api("/settings/usage-sharing");
+  if (consent.enabled !== false) throw new Error("Packaged local verification must not submit usage");
   if (projects.length !== 1) throw new Error("Setup must create one project");
   let workspace;
   for (let attempt = 0; attempt < 60; attempt++) {
@@ -74,6 +77,7 @@ try {
       credentialFreeBackup: true,
       rendererIsolated: true,
       settings: true,
+      usageSharingDisabled: true,
     }),
   );
 } catch (error) {
