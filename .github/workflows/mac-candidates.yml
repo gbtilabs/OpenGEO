@@ -177,8 +177,11 @@ jobs:
             execFileSync('codesign',['--verify','--deep','--strict',app]);
             const copy=path.resolve('release/mac-sealed',process.env.REVIEW_ARCH==='arm64'?'mac-arm64':'mac','OpenGEO.app');
             fs.mkdirSync(path.dirname(copy),{recursive:true});execFileSync('ditto',[app,copy]);
+            const systemNames=new Set(['PATH','PATHEXT','SYSTEMROOT','WINDIR','COMSPEC','TEMP','TMP','USERPROFILE','HOME','APPDATA','LOCALAPPDATA','PROGRAMDATA','PROGRAMFILES','PROGRAMFILES(X86)','SYSTEMDRIVE','NUMBER_OF_PROCESSORS','PSMODULEPATH']);
+            const environment=Object.fromEntries(Object.entries(process.env).filter(([name])=>systemNames.has(name.toUpperCase())));
+            environment.CSC_IDENTITY_AUTO_DISCOVERY='false';
             execFileSync(process.execPath,['node_modules/electron-builder/out/cli/cli.js','--mac','dmg','--'+process.env.REVIEW_ARCH,'--prepackaged',copy,
-              '--config.directories.output=release/mac-sealed','--config.mac.notarize=false'],{stdio:'inherit',timeout:600000,env:{...process.env,CSC_IDENTITY_AUTO_DISCOVERY:'false'}});
+              '--config.directories.output=release/mac-sealed','--config.mac.notarize=false','--publish','never'],{stdio:'inherit',timeout:600000,env:environment});
           })().catch(error=>{console.error(error);process.exitCode=1});
           JS
       - name: Inspect and operate the actual mounted installer
