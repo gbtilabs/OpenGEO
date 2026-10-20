@@ -15,6 +15,11 @@ on:
         description: Private draft release ID holding exact artifact approvals
         required: true
         type: string
+      repackage_run:
+        description: Optional existing encrypted candidate run for signature-only repackaging
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -37,6 +42,7 @@ jobs:
       REVIEW_RECIPIENT: ${{ inputs.recipient }}
       REVIEW_RELEASE: ${{ inputs.review_release }}
       REVIEW_ARCH: ${{ matrix.arch }}
+      REPACKAGE_RUN: ${{ inputs.repackage_run }}
     steps:
       - name: Validate release scope
         run: |
@@ -59,9 +65,122 @@ jobs:
       - run: npm ci
       - run: npm run check:public
       - name: Build exact Mac application source
+        if: inputs.repackage_run == ''
         run: |
           test "$(git rev-parse HEAD)" = "$REVIEW_SOURCE"
           node scripts/clean-build.mjs --desktop-installer --platform=mac --arch="$REVIEW_ARCH" --desktop-output=release/mac-candidate
+      - name: Recover only the authorized existing package
+        if: inputs.repackage_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=commonjs <<'JS'
+          const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');
+          const {pipeline}=require('node:stream/promises');
+          (async()=>{
+            if(!/^\d+$/.test(process.env.REPACKAGE_RUN))throw new Error('Invalid original run');
+            const api=(route,...args)=>execFileSync('gh',['api',route,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']});
+            const review=JSON.parse(api('repos/surfacedby/OpenGEO/releases/'+process.env.REVIEW_RELEASE));
+            if(!review.draft||review.target_commitish!==process.env.REVIEW_SOURCE)throw new Error('Private recovery scope changed');
+            const name='repackage-'+process.env.REPACKAGE_RUN+'-'+process.env.REVIEW_ARCH+'.json';
+            const asset=review.assets.find(row=>row.name===name);if(!asset)throw new Error('Missing private recovery authorization');
+            const authorization=JSON.parse(api('repos/surfacedby/OpenGEO/releases/assets/'+asset.id,'-H','Accept: application/octet-stream'));
+            if(authorization.scope!=='resource-seal-only'||authorization.sourceCommit!==process.env.REVIEW_SOURCE||authorization.arch!==process.env.REVIEW_ARCH||String(authorization.originalRunId)!==process.env.REPACKAGE_RUN)throw new Error('Recovery authorization differs');
+            const artifact=JSON.parse(api('repos/surfacedby/OpenGEO/actions/artifacts/'+authorization.artifactId));
+            if(String(artifact.workflow_run.id)!==process.env.REPACKAGE_RUN||artifact.workflow_run.head_sha!==authorization.workflowHead||artifact.digest!=='sha256:'+authorization.artifactZipSha256||artifact.name!=='mac-review-'+process.env.REVIEW_ARCH+'-'+process.env.REPACKAGE_RUN)throw new Error('Original artifact identity differs');
+            const root=path.join(process.env.RUNNER_TEMP,'mac-input-'+process.env.REVIEW_ARCH);fs.mkdirSync(root);
+            const archive=path.join(root,'encrypted.zip'),fd=fs.openSync(archive,'wx');
+            try{execFileSync('gh',['api','repos/surfacedby/OpenGEO/actions/artifacts/'+artifact.id+'/zip'],{stdio:['ignore',fd,'pipe'],timeout:900000});}finally{fs.closeSync(fd);}
+            const digest=async file=>{const h=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(file))h.update(chunk);return h.digest('hex');};
+            if(await digest(archive)!==authorization.artifactZipSha256)throw new Error('Original encrypted archive changed');
+            const names=execFileSync('unzip',['-Z1',archive],{encoding:'utf8'}).trim().split('\n').sort();
+            if(JSON.stringify(names)!==JSON.stringify(['candidate.bin','envelope.json']))throw new Error('Unexpected encrypted members');
+            execFileSync('unzip',['-q',archive,'-d',root]);
+            const envelope=JSON.parse(fs.readFileSync(path.join(root,'envelope.json'),'utf8'));
+            if(envelope.sourceCommit!==authorization.sourceCommit||envelope.arch!==authorization.arch||String(envelope.runId)!==process.env.REPACKAGE_RUN||envelope.plainSha256!==authorization.bundleSha256)throw new Error('Original encrypted envelope changed');
+            const key=Buffer.from(authorization.contentKeyBase64,'base64');if(key.length!==32)throw new Error('Invalid content key');
+            const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(envelope.iv,'base64'));decipher.setAuthTag(Buffer.from(envelope.tag,'base64'));
+            const temporary=path.join(root,'original.tar.partial');
+            await pipeline(fs.createReadStream(path.join(root,'candidate.bin')),decipher,fs.createWriteStream(temporary,{flags:'wx'}));
+            if(await digest(temporary)!==envelope.plainSha256||fs.statSync(temporary).size!==envelope.bytes)throw new Error('Original decrypted archive changed');
+            const members=execFileSync('tar',['-tf',temporary],{encoding:'utf8'}).trim().split('\n').sort();
+            const expected=[authorization.installer.name,'mounted-payload.tar.gz','native-inspection.json','installed-smoke.stdout','installed-smoke.stderr'].sort();
+            if(JSON.stringify(members)!==JSON.stringify(expected))throw new Error('Original native archive members differ');
+            execFileSync('tar',['-xf',temporary,'-C',root]);
+            if(await digest(path.join(root,authorization.installer.name))!==authorization.installer.sha256)throw new Error('Original DMG changed');
+            delete authorization.contentKeyBase64;fs.writeFileSync(path.join(root,'recovery-binding.json'),JSON.stringify(authorization,null,2));
+            key.fill(0);
+          })().catch(error=>{console.error(error);process.exitCode=1});
+          JS
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import ast, hashlib, json, os, plistlib, subprocess, tarfile, textwrap
+          root=Path.cwd()
+          original=Path(os.environ['RUNNER_TEMP'])/('mac-input-'+os.environ['REVIEW_ARCH'])
+          native=json.loads((original/'native-inspection.json').read_text())
+          assert native['source']==os.environ['REVIEW_SOURCE'] and str(native['runId'])==os.environ['REPACKAGE_RUN']
+          workflow=subprocess.check_output(['git','show','90d409451da3a2a4dae844335e8b8e0bfc30fbdd:.github/workflows/mac-candidates.yml']).decode()
+          assert hashlib.sha256(workflow.encode()).hexdigest()=='cbb1422e302cd1c9158ad5814289220c99a71c46af27abe85e684e331f991978'
+          code=workflow.split('      - name: Inspect and operate the actual mounted installer\n',1)[1].split("          python3 - <<'PY'\n",1)[1].split('\n          PY',1)[0]
+          code=textwrap.dedent(code)
+          for node in ast.parse(code).body:
+              if isinstance(node,ast.FunctionDef) and node.name in ['digest','inventory']:
+                  exec(compile(ast.Module(body=[node],type_ignores=[]),'original-native-inventory','exec'))
+          attached=plistlib.loads(subprocess.check_output(['hdiutil','attach','-readonly','-nobrowse','-plist',str(original/native['installer']['name'])]))
+          mounts=[Path(row['mount-point']) for row in attached['system-entities'] if 'mount-point' in row]
+          assert len(mounts)==1
+          mount=mounts[0]
+          try:
+              import stat
+              assert inventory(mount,volume=True)==native['mounted_inventory']
+              app=root/'release/mac-candidate'/('mac-arm64' if os.environ['REVIEW_ARCH']=='arm64' else 'mac')/'OpenGEO.app'
+              app.parent.mkdir(parents=True)
+              subprocess.run(['ditto',str(mount/'OpenGEO.app'),str(app)],check=True)
+              assert inventory(app)==inventory(mount/'OpenGEO.app')
+          finally:
+              subprocess.run(['hdiutil','detach',str(mount)],check=True)
+          regular=original/'regular'
+          regular.mkdir()
+          with tarfile.open(original/'mounted-payload.tar.gz') as package:
+              seen=set()
+              for member in package.getmembers():
+                  name=PurePosixPath(member.name)
+                  assert name.parts[0]=='mounted' and '..' not in name.parts and not name.is_absolute()
+                  relative='/'.join(name.parts[1:]);assert relative in native['mounted_inventory'] and relative not in seen;seen.add(relative)
+                  expected=native['mounted_inventory'][relative]
+                  if expected['kind']!='file':continue
+                  assert member.isfile() or member.islnk()
+                  destination=regular/relative;destination.parent.mkdir(parents=True,exist_ok=True)
+                  with package.extractfile(member) as source,destination.open('xb') as target:
+                      while block:=source.read(1048576):target.write(block)
+                  assert digest(destination)==expected['sha256']
+              assert seen==set(native['mounted_inventory'])
+          PY
+      - name: Seal the preview without a developer account
+        run: |
+          node --input-type=commonjs <<'JS'
+          const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
+          (async()=>{
+            const {signAsync}=require('@electron/osx-sign');
+            const app=path.resolve('release/mac-candidate',process.env.REVIEW_ARCH==='arm64'?'mac-arm64':'mac','OpenGEO.app');
+            const entitlements=path.join(process.env.RUNNER_TEMP,'preview-jit-'+process.env.REVIEW_ARCH+'.plist');
+            fs.writeFileSync(entitlements,'<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>');
+            const ignore=file=>{
+              if(fs.realpathSync(file)!==file)return true;
+              if(fs.statSync(file).isDirectory())return !file.endsWith('.app')&&!file.endsWith('.framework');
+              const fd=fs.openSync(file,'r'),magic=Buffer.alloc(4);try{fs.readSync(fd,magic,0,4,0);}finally{fs.closeSync(fd);}
+              return !['cffaedfe','cefaedfe','feedfacf','feedface','cafebabe','cafebabf','bebafeca','bfbafeca'].includes(magic.toString('hex'));
+            };
+            await signAsync({app,identity:'-',identityValidation:false,platform:'darwin',version:require('./node_modules/electron/package.json').version,
+              strictVerify:true,preAutoEntitlements:false,preEmbedProvisioningProfile:false,ignore:[ignore],
+              optionsForFile:()=>({hardenedRuntime:false,entitlements,timestamp:'none'})});
+            execFileSync('codesign',['--verify','--deep','--strict',app]);
+            const copy=path.resolve('release/mac-sealed',process.env.REVIEW_ARCH==='arm64'?'mac-arm64':'mac','OpenGEO.app');
+            fs.mkdirSync(path.dirname(copy),{recursive:true});execFileSync('ditto',[app,copy]);
+            execFileSync(process.execPath,['node_modules/electron-builder/out/cli/cli.js','--mac','dmg','--'+process.env.REVIEW_ARCH,'--prepackaged',copy,
+              '--config.directories.output=release/mac-sealed','--config.mac.notarize=false'],{stdio:'inherit',timeout:600000,env:{...process.env,CSC_IDENTITY_AUTO_DISCOVERY:'false'}});
+          })().catch(error=>{console.error(error);process.exitCode=1});
+          JS
       - name: Inspect and operate the actual mounted installer
         run: |
           python3 - <<'PY'
@@ -71,7 +190,7 @@ jobs:
           root = Path.cwd()
           out = Path(os.environ['RUNNER_TEMP']) / ('mac-review-' + os.environ['REVIEW_ARCH'])
           out.mkdir()
-          candidates = list((root / 'release/mac-candidate').glob('*.dmg'))
+          candidates = list((root / 'release/mac-sealed').glob('*.dmg'))
           assert len(candidates) == 1
           dmg = candidates[0]
           arch = os.environ['REVIEW_ARCH']
@@ -116,7 +235,7 @@ jobs:
           try:
               before = inventory(mount, volume=True)
               assert (mount / 'OpenGEO.app').is_dir()
-              built = root / 'release/mac-candidate' / ('mac-arm64' if arch == 'arm64' else 'mac') / 'OpenGEO.app'
+              built = root / 'release/mac-sealed' / ('mac-arm64' if arch == 'arm64' else 'mac') / 'OpenGEO.app'
               assert inventory(built) == inventory(mount / 'OpenGEO.app')
               subprocess.run(['ditto', str(mount / 'OpenGEO.app'), str(app)], check=True)
               assert inventory(app) == inventory(mount / 'OpenGEO.app')
@@ -133,19 +252,57 @@ jobs:
               }.items():
                   result = subprocess.run(command, capture_output=True, timeout=30)
                   signatures[name] = {'exit': result.returncode, 'stdout': result.stdout.decode(errors='replace'), 'stderr': result.stderr.decode(errors='replace')}
+              assert signatures['verify']['exit'] == 0
+              assert 'Signature=adhoc' in signatures['display']['stderr']
               source_files = {name: digest(root / name) for name in subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0') if name}
               record = {'source': os.environ['REVIEW_SOURCE'], 'runId': os.environ['GITHUB_RUN_ID'], 'arch': arch,
                         'installer': {'name': asset_name, 'bytes': dmg.stat().st_size, 'sha256': digest(dmg)},
                         'mounted_inventory': before, 'source_files': source_files, 'actual_dmg_payload_equals_build': True,
                         'actual_installed_payload_equals_dmg': True, 'installed_smoke_exit': smoke.returncode,
                         'minimum_macos': info.get('LSMinimumSystemVersion'), 'version': info.get('CFBundleShortVersionString'),
-                        'signatures': signatures, 'developer_id_signed': False, 'notarized': False,
+                        'signatures': signatures, 'developer_id_signed': False, 'notarized': False, 'ad_hoc_resource_seal_verified': True,
                         'test_scope': 'GitHub hosted matching Mac runner; actual readonly DMG mounted and copied to an owned installation directory',
                         'clean_machine_or_gatekeeper_override_acceptance': False}
               (out / 'native-inspection.json').write_text(json.dumps(record, indent=2))
-              with tarfile.open(out / 'mounted-payload.tar.gz', 'w:gz', dereference=False) as archive:
-                  for path in mount.iterdir():
-                      archive.add(path, arcname='mounted/' + path.name)
+              snapshot_name = 'mounted-payload.tar.gz'
+              if os.environ['REPACKAGE_RUN']:
+                  import io
+                  original = Path(os.environ['RUNNER_TEMP']) / ('mac-input-' + arch)
+                  parent = json.loads((original / 'native-inspection.json').read_text())
+                  assert parent['source'] == record['source'] and parent['source_files'] == record['source_files']
+                  patches = {}
+                  counter = 0
+                  snapshot_name = 'mounted-delta.tar.gz'
+                  with tarfile.open(out / snapshot_name, 'w:gz') as archive:
+                      for name, current in before.items():
+                          if current['kind'] != 'file': continue
+                          previous = parent['mounted_inventory'].get(name)
+                          if previous and previous['kind'] == 'file' and previous['sha256'] == current['sha256']: continue
+                          old = original / 'regular' / name
+                          baseline = old.open('rb') if old.is_file() else io.BytesIO()
+                          changes = []
+                          with baseline, (mount / name).open('rb') as fresh:
+                              offset = 0
+                              while block := fresh.read(4096):
+                                  previous_block = baseline.read(len(block))
+                                  if block != previous_block:
+                                      chunk = 'chunks/' + str(counter) + '.bin'; counter += 1
+                                      member = tarfile.TarInfo(chunk); member.size = len(block); archive.addfile(member, io.BytesIO(block))
+                                      changes.append({'offset': offset, 'bytes': len(block), 'member': chunk})
+                                  offset += len(block)
+                          patches[name] = {'base_sha256': previous['sha256'] if previous and previous['kind'] == 'file' else None,
+                                           'sha256': current['sha256'], 'bytes': current['bytes'], 'changes': changes}
+                      delta = {'parent_run': os.environ['REPACKAGE_RUN'], 'parent_installer': parent['installer'], 'arch': arch,
+                               'parent_inventory': parent['mounted_inventory'], 'patches': patches,
+                               'removed': sorted(set(parent['mounted_inventory']) - set(before))}
+                      encoded = json.dumps(delta, indent=2).encode(); member = tarfile.TarInfo('delta.json'); member.size = len(encoded); archive.addfile(member, io.BytesIO(encoded))
+                  record['snapshot_kind'] = 'authenticated-parent-plus-fixed-offset-block-delta'
+                  record['repackage_parent'] = {'run': os.environ['REPACKAGE_RUN'], 'installer': parent['installer']}
+              else:
+                  with tarfile.open(out / snapshot_name, 'w:gz', dereference=False) as archive:
+                      for path in mount.iterdir():
+                          archive.add(path, arcname='mounted/' + path.name)
+                  record['snapshot_kind'] = 'complete-mounted-filesystem'
               shutil.copyfile(dmg, out / asset_name)
           finally:
               subprocess.run(['hdiutil', 'detach', str(mount)], check=True)
@@ -155,7 +312,7 @@ jobs:
           record['owned_program_removed_after_test'] = True
           (out / 'native-inspection.json').write_text(json.dumps(record, indent=2))
           with tarfile.open(out / 'review-bundle.tar', 'w') as archive:
-              for name in [asset_name, 'mounted-payload.tar.gz', 'native-inspection.json', 'installed-smoke.stdout', 'installed-smoke.stderr']:
+              for name in [asset_name, snapshot_name, 'native-inspection.json', 'installed-smoke.stdout', 'installed-smoke.stderr']:
                   archive.add(out / name, arcname=name)
           print(json.dumps({'arch': arch, 'dmg': dmg.name, 'sha256': record['installer']['sha256'], 'installedSmoke': smoke.returncode, 'minimumMacOS': record['minimum_macos']}))
           PY
