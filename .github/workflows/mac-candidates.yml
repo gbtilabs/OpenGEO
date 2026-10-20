@@ -186,7 +186,8 @@ jobs:
               return !['cffaedfe','cefaedfe','feedfacf','feedface','cafebabe','cafebabf','bebafeca','bfbafeca'].includes(magic.toString('hex'));
             };
             await signAsync({app,identity:'-',identityValidation:false,platform:'darwin',version:require('./node_modules/electron/package.json').version,
-              strictVerify:true,preAutoEntitlements:false,preEmbedProvisioningProfile:false,ignore:[ignore],
+              // The locked signer normalizes a scalar callback; its array path drops the option.
+              strictVerify:true,preAutoEntitlements:false,preEmbedProvisioningProfile:false,ignore,
               optionsForFile:()=>({hardenedRuntime:false,entitlements,timestamp:'none'})});
             verifyStubs();
             execFileSync('codesign',['--verify','--deep','--strict',app]);
