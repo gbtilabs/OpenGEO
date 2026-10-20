@@ -20,6 +20,15 @@ on:
         required: false
         default: ''
         type: string
+      architecture:
+        description: Architectures requiring a new installer
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - arm64
+          - x64
 
 permissions:
   contents: write
@@ -29,12 +38,7 @@ jobs:
     if: github.repository == 'surfacedby/OpenGEO'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            arch: arm64
-          - os: macos-15-intel
-            arch: x64
+      matrix: ${{ fromJSON(inputs.architecture == 'x64' && '{"include":[{"os":"macos-15-intel","arch":"x64"}]}' || inputs.architecture == 'arm64' && '{"include":[{"os":"macos-15","arch":"arm64"}]}' || '{"include":[{"os":"macos-15","arch":"arm64"},{"os":"macos-15-intel","arch":"x64"}]}') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -159,14 +163,24 @@ jobs:
       - name: Seal the preview without a developer account
         run: |
           node --input-type=commonjs <<'JS'
-          const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
+          const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');
           (async()=>{
             const {signAsync}=require('@electron/osx-sign');
             const app=path.resolve('release/mac-candidate',process.env.REVIEW_ARCH==='arm64'?'mac-arm64':'mac','OpenGEO.app');
             const entitlements=path.join(process.env.RUNNER_TEMP,'preview-jit-'+process.env.REVIEW_ARCH+'.plist');
             fs.writeFileSync(entitlements,'<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>');
+            // These two functionless vendor stubs have no load-command padding. Signing them
+            // overwrites their dyld fixup header; preserve exact upstream bytes as sealed resources.
+            const stubHome='Contents/Resources/browsers/chromium_headless_shell-1243/chrome-headless-shell-mac-x64/';
+            const preserved=process.env.REVIEW_ARCH==='x64'?new Map([
+              [path.join(app,stubHome,'libEGL.dylib'),'71a00bc0c12b510e63364720f1cda4735863113017e5051ee3a952dfcc475c69'],
+              [path.join(app,stubHome,'libGLESv2.dylib'),'3a26faf71edbbbac22668b20c79ec787196084023e002be987fa5420179008de']
+            ]):new Map();
+            const verifyStubs=()=>{for(const [file,hash]of preserved)if(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==hash)throw new Error('Vendor stub bytes changed');};
+            verifyStubs();
             const ignore=file=>{
               if(fs.realpathSync(file)!==file)return true;
+              if(preserved.has(file))return true;
               if(fs.statSync(file).isDirectory())return !file.endsWith('.app')&&!file.endsWith('.framework');
               const fd=fs.openSync(file,'r'),magic=Buffer.alloc(4);try{fs.readSync(fd,magic,0,4,0);}finally{fs.closeSync(fd);}
               return !['cffaedfe','cefaedfe','feedfacf','feedface','cafebabe','cafebabf','bebafeca','bfbafeca'].includes(magic.toString('hex'));
@@ -174,6 +188,7 @@ jobs:
             await signAsync({app,identity:'-',identityValidation:false,platform:'darwin',version:require('./node_modules/electron/package.json').version,
               strictVerify:true,preAutoEntitlements:false,preEmbedProvisioningProfile:false,ignore:[ignore],
               optionsForFile:()=>({hardenedRuntime:false,entitlements,timestamp:'none'})});
+            verifyStubs();
             execFileSync('codesign',['--verify','--deep','--strict',app]);
             const copy=path.resolve('release/mac-sealed',process.env.REVIEW_ARCH==='arm64'?'mac-arm64':'mac','OpenGEO.app');
             fs.mkdirSync(path.dirname(copy),{recursive:true});execFileSync('ditto',[app,copy]);
