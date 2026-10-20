@@ -20,7 +20,7 @@ Generative engine optimization (GEO), also called answer engine optimization (AE
 
 OpenGEO is free software. Your projects have no artificial limits, and no cloud account is required. External providers charge for their services.
 
-**Public beta:** [download the Windows x64 installer](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.1), or run from source or Docker below. The installer is unsigned, so Windows can display an unknown-publisher or SmartScreen warning. Read the [installation and verification instructions](docs/distribution.md) before installing. macOS and Linux desktop downloads are not included in this beta; source and Docker remain available. This is an early release, not a signed stable v1.
+**Public beta:** [download for Windows or Mac](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.1), or run from source or Docker below. Choose Windows x64, Mac Apple Silicon (arm64) or Mac Intel (x64). The Windows installer is unsigned; Mac previews are ad hoc signed and not notarized. Operating-system warnings or organization policies may prevent installation. Read the [installation and verification instructions](docs/distribution.md). Both Mac architectures were tested on macOS 15; older versions are unverified. Linux desktop downloads are not included. This is an early release, not a signed stable v1.
 
 Local audits and project storage work without a provider. AI features require an eligible connected service and may incur charges. SurfacedBy managed operations depend on server capabilities and remain experimental; a working local audit does not establish live billing, cancellation, usage collection or historical-import acceptance. See the [beta release notes](docs/releases/v0.1.0-beta.1.md).
 
