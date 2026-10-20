@@ -1,0 +1,220 @@
+name: Prepare Mac release candidates
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact reviewed application commit
+        required: true
+        type: string
+      recipient:
+        description: Base64 public encryption key for private artifact review
+        required: true
+        type: string
+      review_release:
+        description: Private draft release ID holding exact artifact approvals
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  candidate:
+    if: github.repository == 'surfacedby/OpenGEO'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      REVIEW_SOURCE: ${{ inputs.source }}
+      REVIEW_RECIPIENT: ${{ inputs.recipient }}
+      REVIEW_RELEASE: ${{ inputs.review_release }}
+      REVIEW_ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Validate release scope
+        run: |
+          python3 - <<'PY'
+          import base64, os, re
+          assert re.fullmatch('[0-9a-f]{40}', os.environ['REVIEW_SOURCE'])
+          assert re.fullmatch('[0-9]+', os.environ['REVIEW_RELEASE'])
+          key = base64.b64decode(os.environ['REVIEW_RECIPIENT'], validate=True)
+          assert key.startswith(b'-----BEGIN PUBLIC KEY-----')
+          PY
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run check:public
+      - name: Build exact Mac application source
+        run: |
+          test "$(git rev-parse HEAD)" = "$REVIEW_SOURCE"
+          node scripts/clean-build.mjs --desktop-installer --platform=mac --arch="$REVIEW_ARCH" --desktop-output=release/mac-candidate
+      - name: Inspect and operate the actual mounted installer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, plistlib, shutil, stat, subprocess, tarfile, tempfile
+
+          root = Path.cwd()
+          out = Path(os.environ['RUNNER_TEMP']) / ('mac-review-' + os.environ['REVIEW_ARCH'])
+          out.mkdir()
+          candidates = list((root / 'release/mac-candidate').glob('*.dmg'))
+          assert len(candidates) == 1
+          dmg = candidates[0]
+          arch = os.environ['REVIEW_ARCH']
+          version = json.loads((root / 'package.json').read_text())['version']
+          asset_name = 'OpenGEO-' + version + '-macos-' + arch + '.dmg'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip() == os.environ['REVIEW_SOURCE']
+          assert not subprocess.check_output(['git', 'status', '--porcelain=v1']).strip()
+
+          def digest(path):
+              with path.open('rb') as stream:
+                  return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+          def inventory(base, volume=False):
+              result = {}
+              for current, directories, files in os.walk(base, followlinks=False):
+                  for name in directories + files:
+                      path = Path(current) / name
+                      relative = path.relative_to(base).as_posix()
+                      mode = path.lstat().st_mode
+                      assert not mode & (stat.S_ISUID | stat.S_ISGID)
+                      row = {'mode': stat.S_IMODE(mode)}
+                      if path.is_symlink():
+                          target = os.readlink(path)
+                          resolved = path.resolve()
+                          assert resolved.is_relative_to(base.resolve()) or (volume and relative == 'Applications' and target == '/Applications')
+                          row.update(kind='symlink', target=target)
+                      elif path.is_dir():
+                          row.update(kind='directory')
+                      else:
+                          assert stat.S_ISREG(mode)
+                          row.update(kind='file', bytes=path.stat().st_size, sha256=digest(path))
+                      result[relative] = row
+              return result
+
+          attached = plistlib.loads(subprocess.check_output(['hdiutil', 'attach', '-readonly', '-nobrowse', '-plist', str(dmg)]))
+          mounts = [Path(row['mount-point']) for row in attached['system-entities'] if 'mount-point' in row]
+          assert len(mounts) == 1
+          mount = mounts[0]
+          install = out / 'installation'
+          install.mkdir()
+          app = install / 'OpenGEO.app'
+          try:
+              before = inventory(mount, volume=True)
+              assert (mount / 'OpenGEO.app').is_dir()
+              built = root / 'release/mac-candidate' / ('mac-arm64' if arch == 'arm64' else 'mac') / 'OpenGEO.app'
+              assert inventory(built) == inventory(mount / 'OpenGEO.app')
+              subprocess.run(['ditto', str(mount / 'OpenGEO.app'), str(app)], check=True)
+              assert inventory(app) == inventory(mount / 'OpenGEO.app')
+              with (out / 'installed-smoke.stdout').open('wb') as stdout, (out / 'installed-smoke.stderr').open('wb') as stderr:
+                  smoke = subprocess.run(['node', 'scripts/desktop-smoke.mjs', str(app / 'Contents/MacOS/OpenGEO')], stdout=stdout, stderr=stderr, timeout=150)
+              assert smoke.returncode == 0
+              assert before == inventory(mount, volume=True)
+              info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+              signatures = {}
+              for name, command in {
+                  'display': ['codesign', '-dv', '--verbose=4', str(app)],
+                  'verify': ['codesign', '--verify', '--deep', '--strict', str(app)],
+                  'gatekeeper': ['spctl', '--assess', '--type', 'execute', '--verbose=4', str(app)],
+              }.items():
+                  result = subprocess.run(command, capture_output=True, timeout=30)
+                  signatures[name] = {'exit': result.returncode, 'stdout': result.stdout.decode(errors='replace'), 'stderr': result.stderr.decode(errors='replace')}
+              source_files = {name: digest(root / name) for name in subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0') if name}
+              record = {'source': os.environ['REVIEW_SOURCE'], 'runId': os.environ['GITHUB_RUN_ID'], 'arch': arch,
+                        'installer': {'name': asset_name, 'bytes': dmg.stat().st_size, 'sha256': digest(dmg)},
+                        'mounted_inventory': before, 'source_files': source_files, 'actual_dmg_payload_equals_build': True,
+                        'actual_installed_payload_equals_dmg': True, 'installed_smoke_exit': smoke.returncode,
+                        'minimum_macos': info.get('LSMinimumSystemVersion'), 'version': info.get('CFBundleShortVersionString'),
+                        'signatures': signatures, 'developer_id_signed': False, 'notarized': False,
+                        'test_scope': 'GitHub hosted matching Mac runner; actual readonly DMG mounted and copied to an owned installation directory',
+                        'clean_machine_or_gatekeeper_override_acceptance': False}
+              (out / 'native-inspection.json').write_text(json.dumps(record, indent=2))
+              with tarfile.open(out / 'mounted-payload.tar.gz', 'w:gz', dereference=False) as archive:
+                  for path in mount.iterdir():
+                      archive.add(path, arcname='mounted/' + path.name)
+              shutil.copyfile(dmg, out / asset_name)
+          finally:
+              subprocess.run(['hdiutil', 'detach', str(mount)], check=True)
+              assert app.parent == out / 'installation'
+              shutil.rmtree(app)
+          assert not app.exists()
+          record['owned_program_removed_after_test'] = True
+          (out / 'native-inspection.json').write_text(json.dumps(record, indent=2))
+          with tarfile.open(out / 'review-bundle.tar', 'w') as archive:
+              for name in [asset_name, 'mounted-payload.tar.gz', 'native-inspection.json', 'installed-smoke.stdout', 'installed-smoke.stderr']:
+                  archive.add(out / name, arcname=name)
+          print(json.dumps({'arch': arch, 'dmg': dmg.name, 'sha256': record['installer']['sha256'], 'installedSmoke': smoke.returncode, 'minimumMacOS': record['minimum_macos']}))
+          PY
+      - name: Encrypt the candidate and native review evidence
+        run: |
+          node --input-type=commonjs <<'JS'
+          const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+          const {pipeline}=require('node:stream/promises');
+          (async()=>{
+            const root=path.join(process.env.RUNNER_TEMP,'mac-review-'+process.env.REVIEW_ARCH);
+            const file=path.join(root,'review-bundle.tar'),output=path.join(root,'encrypted');fs.mkdirSync(output);
+            const key=crypto.randomBytes(32),iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,iv),hash=crypto.createHash('sha256');
+            const input=fs.createReadStream(file);input.on('data',chunk=>hash.update(chunk));
+            await pipeline(input,cipher,fs.createWriteStream(path.join(output,'candidate.bin'),{flags:'wx'}));
+            const wrapped=crypto.publicEncrypt({key:Buffer.from(process.env.REVIEW_RECIPIENT,'base64'),oaepHash:'sha256',padding:crypto.constants.RSA_PKCS1_OAEP_PADDING},key);
+            const record={sourceCommit:process.env.REVIEW_SOURCE,runId:process.env.GITHUB_RUN_ID,arch:process.env.REVIEW_ARCH,name:'review-bundle.tar',bytes:fs.statSync(file).size,
+              plainSha256:hash.digest('hex'),iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),wrappedKey:wrapped.toString('base64')};
+            fs.writeFileSync(path.join(output,'envelope.json'),JSON.stringify(record,null,2));
+          })().catch(error=>{console.error(error);process.exitCode=1});
+          JS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mac-review-${{ matrix.arch }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/mac-review-${{ matrix.arch }}/encrypted/*
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - name: Wait for exact Mac artifact review approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=commonjs <<'JS'
+          const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');
+          (async()=>{
+            const root=path.join(process.env.RUNNER_TEMP,'mac-review-'+process.env.REVIEW_ARCH),candidate=JSON.parse(fs.readFileSync(path.join(root,'native-inspection.json'),'utf8'));
+            const name='approval-'+process.env.GITHUB_RUN_ID+'-'+process.env.REVIEW_ARCH+'.json';
+            const api=(route,...args)=>execFileSync('gh',['api',route,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']});
+            let approved=false;
+            for(let attempt=0;attempt<180;attempt++){
+              const review=JSON.parse(api('repos/surfacedby/OpenGEO/releases/'+process.env.REVIEW_RELEASE));
+              if(!review.draft||review.target_commitish!==candidate.source)throw new Error('Private approval scope changed');
+              const asset=review.assets.find(row=>row.name===name);
+              if(asset){
+                const approval=JSON.parse(api('repos/surfacedby/OpenGEO/releases/assets/'+asset.id,'-H','Accept: application/octet-stream'));
+                if(approval.sourceCommit!==candidate.source||approval.sha256!==candidate.installer.sha256||approval.bytes!==candidate.installer.bytes||approval.arch!==candidate.arch||String(approval.runId)!==process.env.GITHUB_RUN_ID||approval.approvedForUnsignedBeta!==true)throw new Error('Approval does not bind this exact installer');
+                approved=true;break;
+              }
+              if(attempt%3===0)console.log('Waiting for exact '+candidate.arch+' artifact review');
+              await new Promise(resolve=>setTimeout(resolve,20000));
+            }
+            if(!approved)throw new Error('Exact-artifact review approval deadline expired');
+            const file=path.join(root,candidate.installer.name),hash=crypto.createHash('sha256');
+            for await(const chunk of fs.createReadStream(file))hash.update(chunk);
+            if(hash.digest('hex')!==candidate.installer.sha256)throw new Error('Installer changed after review');
+            const release=JSON.parse(api('repos/surfacedby/OpenGEO/releases/tags/v0.1.0-beta.1'));
+            if(release.draft||!release.prerelease||release.target_commitish!==candidate.source||release.assets.some(row=>row.name===candidate.installer.name))throw new Error('Public beta source or asset scope changed');
+            execFileSync('gh',['release','upload','v0.1.0-beta.1',file,'--repo','surfacedby/OpenGEO'],{stdio:'inherit',timeout:600000});
+            const uploaded=JSON.parse(api('repos/surfacedby/OpenGEO/releases/tags/v0.1.0-beta.1')).assets.find(row=>row.name===candidate.installer.name);
+            if(!uploaded||uploaded.size!==candidate.installer.bytes||uploaded.digest!=='sha256:'+candidate.installer.sha256)throw new Error('Public installer differs from reviewed bytes');
+            console.log('Exact reviewed Mac installer uploaded');
+          })().catch(error=>{console.error(error);process.exitCode=1});
+          JS
