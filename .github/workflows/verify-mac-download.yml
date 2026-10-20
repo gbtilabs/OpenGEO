@@ -1,0 +1,70 @@
+name: Verify public Mac download
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Published Mac preview to download anonymously
+        required: true
+        default: x64
+        type: choice
+        options:
+          - x64
+          - arm64
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    if: github.repository == 'surfacedby/OpenGEO'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Download and hash the complete public installer without credentials
+        env:
+          ARCH: ${{ inputs.architecture }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import datetime, hashlib, json, os, pathlib, subprocess
+          arch = os.environ['ARCH']
+          expected = {
+              'arm64': (421918840, '23485758370a09d9f39ced43db34f7511a49c453703a23f9eb31e0045f903ae8'),
+              'x64': (444251635, '2b42948aa1de52745464a4fe52e71b12021e0bc388e3175ce97f76c9f20863a2'),
+          }
+          size, digest = expected[arch]
+          name = 'OpenGEO-0.1.0-beta.1-macos-' + arch + '.dmg'
+          url = 'https://github.com/surfacedby/OpenGEO/releases/download/v0.1.0-beta.1/' + name
+          file = pathlib.Path(os.environ['RUNNER_TEMP']) / name
+          # The large transfer stays on the hosted runner; only the small receipt is retained.
+          result = subprocess.run([
+              'curl', '--disable', '--fail', '--location', '--proto', '=https',
+              '--proto-redir', '=https', '--connect-timeout', '15', '--max-time', '1800',
+              '--silent', '--show-error', '--output', str(file), '--write-out', '%{http_code}', url,
+          ], env={'PATH': os.environ['PATH']}, capture_output=True, text=True, check=True, timeout=1810)
+          assert result.stdout == '200', 'Expected a complete anonymous HTTP 200 download'
+          with file.open('rb') as stream:
+              actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+          assert file.stat().st_size == size and actual == digest, 'Public installer differs from the reviewed native artifact'
+          receipt = {
+              'at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'source': '3ba6ed4f317a88efa18a7db9c4c4f372e486c6b9',
+              'asset': {'name': name, 'bytes': size, 'sha256': actual},
+              'anonymous_http_status': 200,
+              'complete_download_sha256_equals_native_qualified_installer': True,
+              'github_credentials_sent': False,
+              'verification_surface': 'GitHub-hosted Ubuntu runner',
+              'run_id': os.environ['RUN_ID'],
+              'workflow_commit': os.environ['WORKFLOW_COMMIT'],
+          }
+          pathlib.Path('verification.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps(receipt))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: public-mac-download-${{ inputs.architecture }}
+          path: verification.json
+          if-no-files-found: error
+          retention-days: 14
