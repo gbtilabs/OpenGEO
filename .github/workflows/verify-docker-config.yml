@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       head_sha:
-        description: Exact reviewed pull request head commit
+        description: Exact reviewed pull request head or completed merge commit
         required: true
         type: string
 
@@ -41,9 +41,13 @@ jobs:
           assert re.fullmatch(r'[1-9][0-9]*', number)
           assert re.fullmatch(r'[0-9a-f]{40}', head)
           pr = json.loads(subprocess.check_output(['gh', 'api', 'repos/surfacedby/OpenGEO/pulls/' + number]))
-          assert pr['state'] == 'open' and pr['head']['sha'] == head
           assert pr['base']['repo']['full_name'] == 'surfacedby/OpenGEO'
-          repository = pr['head']['repo']['full_name']
+          if pr['state'] == 'open':
+              assert pr['head']['sha'] == head
+              repository = pr['head']['repo']['full_name']
+          else:
+              assert pr['merged'] and pr['merge_commit_sha'] == head
+              repository = pr['base']['repo']['full_name']
           assert re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
               stream.write('repository=' + repository + '\n')
