@@ -1,0 +1,76 @@
+name: Verify reviewed Docker configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request whose Docker changes were reviewed
+        required: true
+        type: string
+      head_sha:
+        description: Exact reviewed pull request head commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  compose:
+    if: github.repository == 'surfacedby/OpenGEO'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TEST_IMAGE: opengeo:review-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          path: controls
+          persist-credentials: false
+      - name: Bind the candidate to the reviewed pull request head
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          REVIEWED_HEAD: ${{ inputs.head_sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          number, head = os.environ['PR_NUMBER'], os.environ['REVIEWED_HEAD']
+          assert re.fullmatch(r'[1-9][0-9]*', number)
+          assert re.fullmatch(r'[0-9a-f]{40}', head)
+          pr = json.loads(subprocess.check_output(['gh', 'api', 'repos/surfacedby/OpenGEO/pulls/' + number]))
+          assert pr['state'] == 'open' and pr['head']['sha'] == head
+          assert pr['base']['repo']['full_name'] == 'surfacedby/OpenGEO'
+          repository = pr['head']['repo']['full_name']
+          assert re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('repository=' + repository + '\n')
+          PY
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: ${{ steps.candidate.outputs.repository }}
+          ref: ${{ inputs.head_sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - name: Build the exact candidate image from source
+        run: docker build --tag "$TEST_IMAGE" candidate
+      - name: Verify Compose ports, actual healthcheck and browser boundary
+        env:
+          CONTROL_SHA: ${{ github.sha }}
+          RESULT_FILE: ${{ github.workspace }}/compose-verification.json
+        run: node controls/scripts/compose-smoke.mjs candidate "$TEST_IMAGE"
+      - name: Verify local audit, backup and restart in the fresh image
+        working-directory: candidate
+        run: node scripts/docker-smoke.mjs "$TEST_IMAGE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: compose-verification
+          path: compose-verification.json
+          if-no-files-found: error
+          retention-days: 14
