@@ -70,9 +70,25 @@ node scripts/setup.mjs
 docker compose up --build -d
 ```
 
-Open <http://localhost:4318>. The setup script creates an encryption secret in `.local/encryption-secret`. Keep the `.local` directory owner-only (mode 700); the mounted secret file must be readable by the container's unprivileged user (mode 644). If Node.js is unavailable, create the file with at least 32 random bytes using your operating system's secure random generator and apply those permissions.
+Open <http://localhost:4318>, or the port you set in `OPENGEO_PORT`. The setup script creates an encryption secret in `.local/encryption-secret`. Keep the `.local` directory owner-only (mode 700); the mounted secret file must be readable by the container's unprivileged user (mode 644). If Node.js is unavailable, create the file with at least 32 random bytes using your operating system's secure random generator and apply those permissions.
 
-Keep the Docker data volume and encryption secret when updating. Source and Docker backups require you to preserve both separately. Do not expose the backend directly to the internet. For ChatGPT sign-in, the browser must reach the callback on the OpenGEO host; see [connections](connections.md#chatgpt).
+Keep the Docker data volume and encryption secret when updating. Source and Docker backups require you to preserve both separately. Do not expose the backend directly to the internet; see [remote access](#remote-access) for reaching it from another machine. For ChatGPT sign-in, the browser must reach the callback on the OpenGEO host; see [connections](connections.md#chatgpt).
+
+## Remote access
+
+The backend accepts only requests whose `Host` header is loopback (`127.0.0.1`, `localhost` or `[::1]`), so publishing it on a hostname, or putting a reverse proxy in front of it, is refused with 403. Forward the ports over SSH instead and keep the browser on loopback:
+
+```sh
+ssh -N -L 4318:127.0.0.1:4318 -L 4319:127.0.0.1:4319 you@your-host
+```
+
+Then open <http://localhost:4318> on your own machine.
+
+The application forward can use any free local port. The browser sends that same port in both `Host` and `Origin`, and the backend only requires the two to agree, so `-L 8318:127.0.0.1:4318` also works and is reached at <http://localhost:8318>.
+
+The sign-in forward is different. Keep its local port equal to `OPENGEO_OAUTH_PORT`, because sign-in sends the browser to that exact loopback address.
+
+A forward is not access control. Anyone who can reach the forwarded port can use the workspace and the providers connected to it, so the SSH credential is the boundary.
 
 ## Build or contribute
 

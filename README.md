@@ -59,7 +59,7 @@ Optional usage sharing is preselected during setup. Uncheck it before finishing,
 ## Guides and contributing
 
 - [Getting started](docs/getting-started.md): from your first audit to a recheck.
-- [Installation and self-hosting](docs/distribution.md): downloads, Docker, updates and backups.
+- [Installation and self-hosting](docs/distribution.md): downloads, Docker, remote access, updates and backups.
 - [Connections and costs](docs/connections.md): choose a service and understand what it collects.
 - [How measurements work](docs/methodology.md): mentions, citations, missing answers and comparisons.
 - [Development](docs/development.md): run from source, use the CLI or connect MCP.
