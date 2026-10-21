@@ -70,9 +70,27 @@ node scripts/setup.mjs
 docker compose up --build -d
 ```
 
-Open <http://localhost:4318>. The setup script creates an encryption secret in `.local/encryption-secret`. Keep the `.local` directory owner-only (mode 700); the mounted secret file must be readable by the container's unprivileged user (mode 644). If Node.js is unavailable, create the file with at least 32 random bytes using your operating system's secure random generator and apply those permissions.
+Open <http://localhost:4318>, or the port you set in `OPENGEO_PORT`. The setup script creates an encryption secret in `.local/encryption-secret`. Keep the `.local` directory owner-only (mode 700); the mounted secret file must be readable by the container's unprivileged user (mode 644). If Node.js is unavailable, create the file with at least 32 random bytes using your operating system's secure random generator and apply those permissions.
 
-Keep the Docker data volume and encryption secret when updating. Source and Docker backups require you to preserve both separately. Do not expose the backend directly to the internet. For ChatGPT sign-in, the browser must reach the callback on the OpenGEO host; see [connections](connections.md#chatgpt).
+Keep the Docker data volume and encryption secret when updating. Source and Docker backups require you to preserve both separately. Do not expose the backend directly to the internet; see [remote access](#remote-access) for reaching it from another machine. For ChatGPT sign-in, the browser must reach the callback on the OpenGEO host; see [connections](connections.md#chatgpt).
+
+## Remote access
+
+OpenGEO is a single-user local workspace without a separate user login. Keep the application and sign-in ports bound to loopback on the server, then forward them over an authenticated SSH connection. The SSH host can be reached through Tailscale or WireGuard if your account and network rules permit it.
+
+The backend checks for loopback `Host` headers, but a header check is not access control. A proxy that rewrites headers does not add authentication. Keep the request checks enabled and use explicit loopback bindings at both ends:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:4318:127.0.0.1:4318 -L 127.0.0.1:4319:127.0.0.1:4319 you@your-host
+```
+
+Then open <http://127.0.0.1:4318> on your own machine. If you changed the server's ports, replace the remote targets with its configured `OPENGEO_PORT` and `OPENGEO_OAUTH_PORT`.
+
+The application forward can use another free local port. For example, `-L 127.0.0.1:8318:127.0.0.1:4318` is reached at <http://127.0.0.1:8318>. The browser sends the same port in `Host` and `Origin`, which must agree.
+
+The sign-in forward is different. Keep its local port equal to `OPENGEO_OAUTH_PORT`, because sign-in sends the browser to that exact loopback address.
+
+The SSH connection controls access to the server-side forwarding. Anyone who can reach your local forwarded port can still use the workspace and connected providers, including other users on that computer. The OpenGEO session cookie is not a separate login. Direct network-hostname and reverse-proxy deployments are not supported; see the [security model](../SECURITY.md#local-access-is-the-trust-boundary).
 
 ## Build or contribute
 
