@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tarfile
 import urllib.request
 
@@ -111,3 +112,48 @@ def extract_bundle(archive, destination):
             if member.isdir():
                 (destination / member.name).chmod(member.mode)
     return destination
+
+
+def verify_bundle_inventory(archive, payload, expected, source_platform):
+    """Verify native metadata in the archive and bytes on the audit filesystem.
+
+    Linux recreates Mac symlinks as 0777 and cannot apply their native 0755 mode.
+    Keep that native mode authenticated by the tar header rather than discarding
+    it or pretending the restored filesystem has the same representation.
+    """
+    assert source_platform in ['darwin', 'win32'] and isinstance(expected, dict) and expected
+    payload = Path(payload)
+    actual = inventory(payload)
+    headers = {}
+    with tarfile.open(archive) as package:
+        for member in package.getmembers():
+            parts = PurePosixPath(member.name).parts
+            if not parts or parts[0] != payload.name or len(parts) == 1:
+                continue
+            name = PurePosixPath(*parts[1:]).as_posix()
+            assert member.name == payload.name + '/' + name and name not in headers
+            headers[name] = member
+    assert set(actual) == set(expected) == set(headers), 'Archive, native and restored payload paths differ'
+    translations, mismatches = [], []
+    for name, native in expected.items():
+        member, restored = headers[name], actual[name]
+        kind = 'file' if member.isfile() else 'directory' if member.isdir() else 'symlink' if member.issym() else 'unsupported'
+        header_matches = kind == native['kind'] and member.mode == native['mode']
+        if kind == 'file':
+            header_matches = header_matches and member.size == native['bytes']
+        elif kind == 'symlink':
+            header_matches = header_matches and member.linkname == native['target']
+        if not header_matches:
+            mismatches.append({'path': name, 'field': 'archive-header', 'native': native, 'headerMode': member.mode, 'headerKind': kind})
+            continue
+        if restored == native:
+            continue
+        if (source_platform == 'darwin' and sys.platform == 'linux' and kind == 'symlink'
+                and native['mode'] == 0o755 and restored['mode'] == 0o777
+                and {**restored, 'mode': native['mode']} == native):
+            translations.append({'path': name, 'nativeAndArchiveMode': native['mode'], 'restoredLinuxMode': restored['mode'], 'target': native['target']})
+        else:
+            mismatches.append({'path': name, 'field': 'restored-payload', 'native': native, 'restored': restored})
+    assert not mismatches, json.dumps({'payloadMismatchCount': len(mismatches), 'firstMismatches': mismatches[:20]})
+    return {'sourcePlatform': source_platform, 'auditPlatform': sys.platform, 'entries': len(expected),
+            'allArchiveHeaderModesVerified': True, 'allNativeFilesAndDirectoriesExact': True, 'symlinkModeTranslations': translations}

@@ -1,15 +1,18 @@
 """Keep candidates private until exact runtime, source and payload reviews approve publication."""
 from pathlib import Path, PureWindowsPath
+import base64
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import struct
 import sys
 import tarfile
 import tempfile
 import urllib.request
-from release_files import api, digest, download_asset, extract_bundle, git, inventory, review_release, upload
+from release_files import api, digest, download_asset, extract_bundle, git, inventory, review_release, upload, verify_bundle_inventory
 
 TARGETS = ['windows-x64', 'macos-arm64', 'macos-x64']
 source = os.environ['REVIEW_SOURCE']
@@ -39,6 +42,57 @@ def seven_extract(archive, output):
     subprocess.run(['7z', 'x', str(archive), '-o' + str(output), '-y'], check=True, stdout=subprocess.DEVNULL)
 
 
+def manual_review_metadata(payload, app, asar, native_files, app_files, provenance, findings):
+    """Retain bounded exact metadata privately without transferring installers."""
+    files = []
+    selected = {(str(payload), row['path']) for row in provenance['differencesRequireReview']}
+    selected.update((str(app), row['path']) for row in findings if row.get('scope') == 'artifact:app-asar')
+    for home, relative in sorted(selected):
+        path = Path(home) / relative
+        if path.name not in ['package.json', 'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'CodeResources'] and path.suffix != '.plist':
+            continue
+        canonical = path.resolve(strict=True)
+        assert canonical.is_relative_to(Path(home).resolve())
+        rows = native_files if Path(home) == payload else app_files
+        native = rows[canonical.relative_to(Path(home).resolve()).as_posix()]
+        assert native['kind'] == 'file' and canonical.stat().st_size == native['bytes'] <= 1_000_000 and digest(canonical) == native['sha256']
+        data = canonical.read_bytes()
+        files.append({'scope': 'artifact:payload' if Path(home) == payload else 'artifact:app-asar', 'path': relative,
+                      'sha256': native['sha256'], 'bytes': len(data), 'base64': base64.b64encode(data).decode('ascii')})
+    # This is the original container header, including its pickle padding. Its
+    # offsets can be checked against the separately inventoried unpacked files.
+    header = json.loads(subprocess.check_output(['node', '-e', 'const {headerSize}=require("@electron/asar").getRawHeader(process.argv[1]);console.log(JSON.stringify({headerSize}));', str(asar)], timeout=30))
+    assert 0 < header['headerSize'] < 8_000_000
+    with asar.open('rb') as stream:
+        raw_header = stream.read(header['headerSize'] + 8)
+    assert len(raw_header) == header['headerSize'] + 8
+    result = {'files': files, 'asarHeader': {'containerSha256': digest(asar), 'containerBytes': asar.stat().st_size,
+              'headerBytes': len(raw_header), 'headerSha256': hashlib.sha256(raw_header).hexdigest(), 'base64': base64.b64encode(raw_header).decode('ascii')}}
+    executable = next((row for row in provenance['differencesRequireReview'] if row['path'] == 'OpenGEO.exe'), None)
+    if executable:
+        assert executable['nonResourceSectionsEqual'] is True
+        image = (payload / 'OpenGEO.exe').read_bytes()
+        assert hashlib.sha256(image).hexdigest() == executable['sha256']
+        assert image[:2] == b'MZ'
+        pe = struct.unpack_from('<I', image, 0x3c)[0]
+        assert image[pe:pe + 4] == b'PE\0\0'
+        count = struct.unpack_from('<H', image, pe + 6)[0]
+        table = pe + 24 + struct.unpack_from('<H', image, pe + 20)[0]
+        assert 0 < count < 97 and table + count * 40 <= len(image)
+        resources = []
+        for index in range(count):
+            row = table + index * 40
+            if image[row:row + 8].rstrip(b'\0') == b'.rsrc':
+                size, offset = struct.unpack_from('<II', image, row + 16)
+                assert 0 < size <= 4_000_000 and offset + size <= len(image)
+                data = image[offset:offset + size]
+                assert hashlib.sha256(data).hexdigest() == executable['packagedSections']['.rsrc']
+                resources.append({'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data), 'base64': base64.b64encode(data).decode('ascii')})
+        assert len(resources) == 1
+        result['windowsBrandingResource'] = resources[0]
+    return result
+
+
 def audit():
     target = os.environ['REVIEW_TARGET']
     assert target in TARGETS
@@ -59,7 +113,7 @@ def audit():
     installer = unpacked / record['installer']['name']
     assert digest(installer) == record['installer']['sha256'] and installer.stat().st_size == record['installer']['bytes']
     payload = unpacked / 'payload'
-    assert inventory(payload) == record['payload']
+    transport = verify_bundle_inventory(bundle, payload, record['payload'], 'darwin' if target.startswith('macos') else 'win32')
     asar = payload / ('OpenGEO.app/Contents/Resources/app.asar' if target.startswith('macos') else 'resources/app.asar')
     app = out / 'app-asar'
     subprocess.run(['node', '-e', "require('@electron/asar').extractAll(process.argv[1],process.argv[2])", str(asar), str(app)], check=True)
@@ -108,9 +162,11 @@ def audit():
     assert result.returncode in [0, 1]
     audit_record = json.loads((out / 'audit/release-receipt.json').read_text())
     assert audit_record['commit'] == source and audit_record['clean']
+    vendor_record = json.loads((provenance / 'vendor-provenance.json').read_text())
     report = {'source': source, 'candidateRun': run, 'auditRun': os.environ['GITHUB_RUN_ID'], 'target': target,
               'bundleSha256': digest(bundle), 'installer': record['installer'], 'nativeChecks': record,
-              'asarFiles': app_files, 'provenance': json.loads((provenance / 'vendor-provenance.json').read_text()),
+              'asarFiles': app_files, 'payloadTransport': transport, 'provenance': vendor_record,
+              'manualReviewMetadata': manual_review_metadata(payload, app, asar, record['payload'], app_files, vendor_record, audit_record['findings']),
               'audit': audit_record, 'auditExit': result.returncode, 'publicationApproved': False}
     file = out / ('review-' + run + '-' + target + '-' + os.environ['GITHUB_RUN_ID'] + '.json')
     file.write_text(json.dumps(report, indent=2))
@@ -145,6 +201,7 @@ def publish():
         assert audited['head_sha'] == source and audited['path'] == '.github/workflows/release.yml' and audited['conclusion'] == 'success'
         assert report['auditExit'] == 0 and not report['audit']['findings']
         assert report['audit']['clean'] and report['audit']['commit'] == source
+        assert report['payloadTransport']['allArchiveHeaderModesVerified'] and report['payloadTransport']['allNativeFilesAndDirectoriesExact']
         assert approved['provenanceAndPackagingReviewed'] is True
         bundle = download_asset('candidate-' + run + '-' + target + '.tar.gz', out)
         assert digest(bundle) == report['bundleSha256']
