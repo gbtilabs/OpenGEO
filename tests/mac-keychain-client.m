@@ -22,16 +22,36 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
   if (SecKeychainSetUserInteractionAllowed(false) != errSecSuccess) return 78;
   SecKeychainRef keychain = NULL; OSStatus status = SecKeychainOpen(path.fileSystemRepresentation, &keychain);
   if (status != errSecSuccess) return 78;
-  const char *service = "OpenGEO Safe Storage", *account = "OpenGEO";
   UInt32 size = 0; void *bytes = NULL;
+#if defined(CLIENT_API_V2)
+  // Chromium queries through SecItem with the process's configured search list.
+  CFTypeRef result = NULL;
+  NSDictionary *query = @{(__bridge NSString *)kSecClass:(__bridge NSString *)kSecClassGenericPassword,
+    (__bridge NSString *)kSecAttrService:@"OpenGEO Safe Storage", (__bridge NSString *)kSecAttrAccount:@"OpenGEO",
+    (__bridge NSString *)kSecMatchLimit:(__bridge NSString *)kSecMatchLimitOne,
+    (__bridge NSString *)kSecReturnData:@YES, (__bridge NSString *)kSecReturnAttributes:@YES};
+  status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+  if (status == errSecSuccess) {
+    CFDataRef data = result && CFGetTypeID(result) == CFDictionaryGetTypeID() ? CFDictionaryGetValue((CFDictionaryRef)result, kSecValueData) : NULL;
+    if (!data || CFGetTypeID(data) != CFDataGetTypeID()) status = errSecDecode;
+    else { size = (UInt32)CFDataGetLength(data); bytes = (void *)CFDataGetBytePtr(data); }
+  }
+#else
+  const char *service = "OpenGEO Safe Storage", *account = "OpenGEO";
   status = SecKeychainFindGenericPassword(keychain, (UInt32)strlen(service), service, (UInt32)strlen(account), account, &size, &bytes, NULL);
+#endif
   if (status == errSecSuccess) {
     unsigned char hash[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(bytes, size, hash);
     printf("{\"client\":%d,\"status\":0,\"secretSha256\":\"", CLIENT_ID);
     for (NSUInteger index = 0; index < sizeof(hash); index++) printf("%02x", hash[index]);
     printf("\"}\n");
   } else printf("{\"client\":%d,\"status\":%d}\n", CLIENT_ID, (int)status);
-  if (bytes) SecKeychainItemFreeContent(NULL, bytes); CFRelease(keychain);
+#if defined(CLIENT_API_V2)
+  if (result) CFRelease(result);
+#else
+  if (bytes) SecKeychainItemFreeContent(NULL, bytes);
+#endif
+  CFRelease(keychain);
   if (status == errSecSuccess) return 0;
   return status == errSecAuthFailed || status == errSecInteractionNotAllowed || status == CSSMERR_CSP_OPERATION_AUTH_DENIED ? 77 : 78;
 } }

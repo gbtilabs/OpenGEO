@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -13,18 +14,37 @@ import unittest
 @unittest.skipUnless(sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true', 'Requires an owned native Mac release runner')
 class KeychainConsent(unittest.TestCase):
     def test_two_reviewed_clients_decrypt_and_an_unlisted_client_is_refused(self):
+        self.check_clients(bundled=False)
+
+    def test_bundle_replacement_uses_the_same_secitem_query_as_chromium(self):
+        self.check_clients(bundled=True)
+
+    def check_clients(self, *, bundled):
         assert os.environ['GITHUB_REPOSITORY'] == 'surfacedby/OpenGEO' and os.environ['RUNNER_OS'] == 'macOS'
         temporary = Path(os.environ['RUNNER_TEMP']).resolve()
         directory = Path(tempfile.mkdtemp(prefix='release-macos-unit-', dir=temporary))
         controller = temporary / 'opengeo-keychain-fixture'
         self.assertTrue(controller.is_file())
-        clients = [directory / ('client-' + str(number)) for number in [1, 2, 3]]
+        clients = [directory / ('client-' + str(number) + ('.app' if bundled else '')) for number in [1, 2, 3]]
+        executables = [client / 'Contents/MacOS/OpenGEO' if bundled else client for client in clients]
         try:
-            for number, client in enumerate(clients, 1):
-                subprocess.run(['clang', '-fobjc-arc', '-DCLIENT_ID=' + str(number), '-framework', 'Foundation', '-framework', 'Security', 'tests/mac-keychain-client.m', '-o', str(client)], check=True, timeout=30)
+            for number, (client, executable) in enumerate(zip(clients, executables), 1):
+                if bundled:
+                    executable.parent.mkdir(parents=True)
+                    (client / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'org.opengeo.keychain-fixture', 'CFBundleExecutable':'OpenGEO', 'CFBundleName':'OpenGEO Fixture', 'CFBundleVersion':str(number), 'CFBundlePackageType':'APPL'}))
+                flags = ['-DCLIENT_API_V2=1'] if bundled else []
+                subprocess.run(['clang', '-fobjc-arc', '-DCLIENT_ID=' + str(number), *flags, '-framework', 'Foundation', '-framework', 'Security', 'tests/mac-keychain-client.m', '-o', str(executable)], check=True, timeout=30)
                 subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(client)], check=True, timeout=30)
             subprocess.run([str(controller), 'setup', str(directory), str(clients[0]), str(clients[1])], check=True, timeout=30)
-            results = [subprocess.run([str(client), str(directory)], capture_output=True, text=True, timeout=10) for client in clients]
+            if bundled:
+                old = subprocess.run([str(executables[0]), str(directory)], capture_output=True, text=True, timeout=10)
+                self.assertEqual(old.returncode, 0, (old.stdout, old.stderr))
+                # Match installation: replace the old bundle at its existing path.
+                shutil.rmtree(clients[0])
+                subprocess.run(['ditto', str(clients[1]), str(clients[0])], check=True, timeout=30)
+                results = [old, *[subprocess.run([str(client), str(directory)], capture_output=True, text=True, timeout=10) for client in [executables[0], executables[2]]]]
+            else:
+                results = [subprocess.run([str(client), str(directory)], capture_output=True, text=True, timeout=10) for client in executables]
             self.assertEqual([row.returncode for row in results], [0, 0, 77], [(row.returncode, row.stdout, row.stderr) for row in results])
             values = [json.loads(row.stdout) for row in results]
             self.assertEqual([row['client'] for row in values], [1, 2, 3])
