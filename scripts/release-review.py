@@ -51,6 +51,7 @@ def audit():
     if target.startswith('macos'):
         consent = record['macUpgradeExplicitKeychainConsent']
         assert consent['trustedDecryptClients'] == 2 and consent['explicitFixtureOwnerConsent']
+        assert consent['protectedKeychainFormat'] is True and len(consent['partitionMetadataBefore']) == 1
         assert len(set(consent['partitionCodeIdentities'])) == 2 and consent['unlistedClientDenied'] is True
         assert all(re.fullmatch(r'cdhash:[0-9a-f]{40}', identity) for identity in consent['partitionCodeIdentities'])
         assert consent['originalDefaultAndSearchRestored'] and consent['ownedKeychainRemoved']

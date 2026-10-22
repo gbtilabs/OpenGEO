@@ -9,9 +9,16 @@
 int main(int argc, const char *argv[]) { @autoreleasepool {
   NSDictionary *environment = NSProcessInfo.processInfo.environment;
   if (argc != 2 || ![environment[@"GITHUB_ACTIONS"] isEqual:@"true"] || ![environment[@"RUNNER_OS"] isEqual:@"macOS"] || ![environment[@"GITHUB_REPOSITORY"] isEqual:@"surfacedby/OpenGEO"]) return 78;
-  NSString *path = [@(argv[1]) stringByResolvingSymlinksInPath];
+  NSString *directory = [@(argv[1]) stringByResolvingSymlinksInPath];
   NSString *temporary = [environment[@"RUNNER_TEMP"] stringByResolvingSymlinksInPath];
-  if (![path hasPrefix:[temporary stringByAppendingString:@"/release-macos-unit-"]] || ![path.lastPathComponent isEqual:@"upgrade-fixture.keychain-db"]) return 78;
+  if (![directory hasPrefix:[temporary stringByAppendingString:@"/release-macos-unit-"]]) return 78;
+  NSDictionary *state = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[directory stringByAppendingPathComponent:@"keychain-state.json"]] options:0 error:nil];
+  NSString *path = state[@"fixture"], *base = state[@"fixtureBase"];
+  NSString *home = [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Keychains"] stringByResolvingSymlinksInPath];
+  NSString *prefix = [@"opengeo-" stringByAppendingFormat:@"%@-", directory.lastPathComponent];
+  if (![state[@"ownerDirectory"] isEqual:directory] || ![base.stringByDeletingLastPathComponent isEqual:home] || ![base.lastPathComponent hasPrefix:prefix] || ![base hasSuffix:@".keychain"] || ![path isEqual:[base stringByAppendingString:@"-db"]]) return 78;
+  NSString *uuid = [base.lastPathComponent substringWithRange:NSMakeRange(prefix.length, base.lastPathComponent.length - prefix.length - @".keychain".length)];
+  if (![[NSUUID alloc] initWithUUIDString:uuid]) return 78;
   if (SecKeychainSetUserInteractionAllowed(false) != errSecSuccess) return 78;
   SecKeychainRef keychain = NULL; OSStatus status = SecKeychainOpen(path.fileSystemRepresentation, &keychain);
   if (status != errSecSuccess) return 78;

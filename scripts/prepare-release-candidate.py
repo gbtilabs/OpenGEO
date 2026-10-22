@@ -1,6 +1,5 @@
 """Exercise actual installers and an existing beta workspace on matching hosted runners."""
 from pathlib import Path
-import base64
 import json
 import os
 import plistlib
@@ -87,11 +86,9 @@ if suffix == '.dmg':
     old_executable = install(previous)
     controller = out / 'keychain-fixture'
     subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation', '-framework', 'Security', 'scripts/mac-keychain-fixture.m', '-o', str(controller)], check=True, timeout=60)
-    keychain_password = base64.b64encode(os.urandom(32))
     try:
-        subprocess.run([str(controller), 'setup', str(out), str(installation / 'OpenGEO.app'), str(built_app)], input=keychain_password, check=True, timeout=30)
+        subprocess.run([str(controller), 'setup', str(out), str(installation / 'OpenGEO.app'), str(built_app)], check=True, timeout=30)
         smoke(old_executable, 'seed')
-        subprocess.run([str(controller), 'authorize', str(out), str(installation / 'OpenGEO.app'), str(built_app)], input=keychain_password, check=True, timeout=30)
         executable = install(candidate)
         smoke(executable, 'verify')
     finally:
