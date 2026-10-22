@@ -9,6 +9,7 @@ import { connectionPage } from "./connection-page.js";
 import identity from "../brand/identity.json";
 const issuer = "https://auth.openai.com",
   resource = "https://api.openai.com/v1";
+export type CallbackListener = { host: "127.0.0.1" | "0.0.0.0"; port: number };
 type Pending = {
   provider: "chatgpt" | "openrouter";
   verifier: string;
@@ -34,6 +35,7 @@ export class Connections {
     readonly vault: Vault,
     readonly returnUrl: () => string | undefined = () => undefined,
     readonly onConnected: () => void = () => {},
+    readonly callback: CallbackListener = { host: "127.0.0.1", port: Number(process.env.OPENGEO_OAUTH_PORT ?? 0) },
   ) {
     const account = vault.get("chatgpt");
     if (account?.profiles?.some((profile: any) => !profile.label)) {
@@ -124,7 +126,7 @@ export class Connections {
           if (!this.pending.has(state)) server.close(() => this.servers.delete(server));
         }
       });
-      const callbackPort = Number(process.env.OPENGEO_OAUTH_PORT ?? 0);
+      const callbackPort = this.callback.port;
       if (
         !Number.isInteger(callbackPort) ||
         callbackPort < 0 ||
@@ -139,7 +141,7 @@ export class Connections {
         server.once("error", failed);
         server.listen(
           callbackPort,
-          process.env.OPENGEO_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1",
+          this.callback.host,
           () => {
             server.removeListener("error", failed);
             resolve();

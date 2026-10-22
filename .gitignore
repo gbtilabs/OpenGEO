@@ -13,3 +13,4 @@ playwright-report/
 coverage/
 audit-private/
 .browser-runtime/
+__pycache__/

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { Store } from "./storage.js";
 import { Vault } from "./vault.js";
 import identity from "../brand/identity.json";
-import { Connections } from "./oauth.js";
+import { Connections, type CallbackListener } from "./oauth.js";
 import { Providers } from "./providers.js";
 import { consoleCapabilities } from "./console-capabilities.js";
 import { questionDiscoveryVersion } from "./discovery.js";
@@ -48,6 +48,7 @@ export async function createApp(
   staticRoot = resolve("dist"),
   onConnected?: () => void,
   remoteOptions?: RemoteConfig,
+  callbackListener?: CallbackListener,
 ) {
   const app = Fastify({ logger: false, bodyLimit: 20_000_000 });
   const remote = remoteOptions ? new RemoteAccess(remoteOptions, token) : undefined;
@@ -59,7 +60,7 @@ export async function createApp(
   const connections = new Connections(store, vault, () => {
       const address = app.server.address();
       return address && typeof address !== "string" ? "http://127.0.0.1:" + address.port : undefined;
-    }, onConnected),
+    }, onConnected, callbackListener),
     p = new Providers(vault, connections),
     runner = new Runner(store, p),
     scheduler = new Scheduler(store);

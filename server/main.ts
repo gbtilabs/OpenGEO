@@ -17,6 +17,9 @@ export async function start(
 ) {
   const remote = remoteConfig();
   if (remote && options.protector) throw new Error("Remote access is supported by the standalone server, not the desktop application");
+  // Desktop encryption is supplied by its launcher. Container settings must never expose that local workspace or its callback listener.
+  const host = !options.protector && process.env.OPENGEO_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1";
+  const callback = { host, port: options.protector ? 0 : Number(process.env.OPENGEO_OAUTH_PORT ?? 0) } as const;
   const directory = resolve(
     options.directory ?? process.env.OPENGEO_DATA_DIR ?? ".local",
   );
@@ -37,7 +40,7 @@ export async function start(
   }
   let result: Awaited<ReturnType<typeof createApp>>;
   try {
-    result = await createApp(store, vault, undefined, options.staticRoot, options.onConnected, remote);
+    result = await createApp(store, vault, undefined, options.staticRoot, options.onConnected, remote, callback);
   } catch (error) {
     store.close();
     unlock();
@@ -50,26 +53,31 @@ export async function start(
   try {
     await result.app.listen({
       port: options.port ?? Number(process.env.OPENGEO_PORT ?? 4318),
-      host: process.env.OPENGEO_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1",
+      host,
     });
   } catch (error) {
     await result.app.close();
     throw error;
   }
-  writeFileSync(resolve(directory, "local-session"), result.token, {
-    mode: 0o600,
-  });
-  const address = result.app.server.address();
-  if (!address || typeof address === "string")
-    throw new Error("Missing runtime address");
-  writeFileSync(
-    resolve(directory, "runtime.json"),
-    JSON.stringify({ origin: "http://127.0.0.1:" + address.port }),
-    { mode: 0o600 },
-  );
-  result.runner.start();
-  result.scheduler.start();
-  result.usage.start();
+  try {
+    writeFileSync(resolve(directory, "local-session"), result.token, {
+      mode: 0o600,
+    });
+    const address = result.app.server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing runtime address");
+    writeFileSync(
+      resolve(directory, "runtime.json"),
+      JSON.stringify({ origin: "http://127.0.0.1:" + address.port }),
+      { mode: 0o600 },
+    );
+    result.runner.start();
+    result.scheduler.start();
+    result.usage.start();
+  } catch (error) {
+    await result.app.close();
+    throw error;
+  }
   return { ...result, store };
 }
 if (

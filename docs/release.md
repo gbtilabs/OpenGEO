@@ -8,7 +8,7 @@ Public v1 requires the complete workflow, working desktop/Docker distributions, 
 
 ## GitHub beta scope
 
-Version 0.1.0-beta.1 includes an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
+Version 0.1.0-beta.2 includes an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
 
 Only attach binaries whose exact payload passed confidentiality review and whose actual installation and local workflow were exercised. State the tested host and limitations: an isolated maintainer profile or native hosted runner is not a clean-machine certification. Do not attach untested platforms merely because source tests passed there.
 
@@ -66,3 +66,33 @@ History findings retain their commit identity. A historical false-positive dispo
 Enable private vulnerability reporting on the repository. Complete naming/logo clearance and contribution/license review. Build and test the reviewed commit again, audit the resulting hashes, then publish only those artifacts.
 
 Keep large build and release transfers on hosted runners when local bandwidth is limited. An anonymous full-download check can also run there, returning only its small hash receipt. That receipt must bind the actual successful run, workflow revision, source and complete downloaded bytes; a successful upload or server digest alone is not a full-download check.
+
+## Hosted beta release procedure
+
+The `Review and publish beta packages` workflow has three separate phases. Each
+requires an exact full commit on `master` and a private draft release targeting
+that commit. Draft review assets must never be published.
+
+1. **Prepare:** build on Windows x64 and both native Mac architectures; install
+   beta.1 in an isolated profile, update it, verify the project, audit evidence,
+   disabled usage sharing and OS-encrypted storage survive, then exercise a fresh
+   installation. Verify the Mac resource seal and retain complete payload
+   inventories. Also build and operate Docker on Linux amd64 and arm64. Upload
+   candidates only to the private draft.
+2. **Audit:** use the original prepare run ID. Hosted Linux runners unpack those
+   exact packages and ASAR files, compare installed vendor files with pinned
+   official archives, and scan the complete payload and fresh source/history.
+   `OPENGEO_RELEASE_REVIEW` is a temporary repository secret containing the private
+   confidential-value array. It is used only in this phase, never in builds or
+   application processes. Findings and file-level review dispositions stay in the
+   private draft. A blocked audit is retained; subsequent audit runs do not rebuild
+   installers or replace earlier evidence.
+3. **Publish:** requires an authenticated, exact-hash publication approval in the
+   private draft, successful source and remote-access CI, and zero unresolved
+   audit findings. Review vendor metadata and all payload exceptions before
+   approving. The runner publishes only the approved installers, an exact source
+   archive, manifest and checksums, then anonymously downloads every public file
+   in full and checks its bytes. Retain the small verification receipt privately.
+
+Delete the temporary matching secret and private review draft after retaining the
+necessary audit evidence. Existing public release assets remain immutable.

@@ -1,9 +1,14 @@
 import { _electron as electron } from "playwright";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import identity from "../brand/identity.json" with { type: "json" };
-const directory = mkdtempSync(join(tmpdir(), "opengeo-desktop-test-"));
+const args = process.argv.slice(2);
+const option = name => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
+const externalProfile = option("--profile"), phase = option("--phase"), receipt = option("--receipt");
+if (externalProfile && (!receipt || !["seed", "verify"].includes(phase))) throw new Error("Upgrade checks require a phase and receipt");
+const directory = externalProfile ? resolve(externalProfile) : mkdtempSync(join(tmpdir(), "opengeo-desktop-test-"));
+const systemNames = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'SYSTEMDRIVE', 'NUMBER_OF_PROCESSORS', 'SHELL', 'USER', 'LOGNAME', 'DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']);
 const root = process.argv[2] === "--verification" ? "release/verification" : "release";
 const defaultExecutable = process.platform === "darwin"
   ? join(root, process.arch === "arm64" ? "mac-arm64" : "mac", identity.name + ".app", "Contents/MacOS", identity.name)
@@ -14,11 +19,12 @@ try {
   if (!existsSync(executable)) throw new Error("Build the desktop verification package before running its checks");
   application = await electron.launch({
     executablePath: executable,
-    // Editors that host Electron export ELECTRON_RUN_AS_NODE; the packaged app must start as an application.
-    env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== "ELECTRON_RUN_AS_NODE")), OPENGEO_DESKTOP_DATA_DIR: directory },
+    // Provider credentials, CI tokens and editor Electron flags are not application configuration.
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => systemNames.has(name.toUpperCase()))), OPENGEO_DESKTOP_DATA_DIR: directory },
     timeout: 30000,
   });
   const page = await application.firstWindow();
+  if (phase !== "verify") {
   await page
     .getByRole("heading", { name: "Power your AI visibility workspace", exact: true })
     .waitFor({ timeout: 30000 });
@@ -34,6 +40,7 @@ try {
     .click();
   await page.getByRole("checkbox", { name: "Help improve OpenGEO by sharing usage", exact: true }).uncheck();
   await page.getByRole("button", { name: "Open workspace & audit", exact: true }).click();
+  }
   await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
   const runtime = JSON.parse(readFileSync(join(directory, "runtime.json"), "utf8"));
   const token = readFileSync(join(directory, "local-session"), "utf8");
@@ -69,6 +76,19 @@ try {
       typeof window.process === "undefined",
   );
   if (!sandbox) throw new Error("Renderer isolation failed");
+  if (phase === "seed") {
+    // A synthetic opaque value tests OS-encrypted storage without connecting any provider.
+    const sealed = await application.evaluate(({ safeStorage }) => [...safeStorage.encryptString(JSON.stringify({ __upgradeProbe: "synthetic-upgrade-storage-check" }))]);
+    writeFileSync(join(directory, "credentials.sealed"), Buffer.from(sealed));
+    writeFileSync(receipt, JSON.stringify({ projectId: projects[0].id, auditId: workspace.jobs[0].id, pages: workspace.pages.length, usageSharing: consent.enabled }));
+  } else if (phase === "verify") {
+    const before = JSON.parse(readFileSync(receipt, "utf8"));
+    if (projects[0].id !== before.projectId || workspace.jobs[0].id !== before.auditId || workspace.pages.length !== before.pages || consent.enabled !== before.usageSharing)
+      throw new Error("The installer update did not preserve the existing workspace");
+    const sealed = [...readFileSync(join(directory, "credentials.sealed"))];
+    const probe = await application.evaluate(({ safeStorage }, bytes) => JSON.parse(safeStorage.decryptString(Buffer.from(bytes))), sealed);
+    if (probe.__upgradeProbe !== "synthetic-upgrade-storage-check") throw new Error("OS-encrypted storage did not survive the update");
+  }
   console.log(
     JSON.stringify({
       packagedStartup: true,
@@ -78,6 +98,7 @@ try {
       rendererIsolated: true,
       settings: true,
       usageSharingDisabled: true,
+      upgradeWorkspaceAndEncryptedStorage: phase === "verify",
     }),
   );
 } catch (error) {
@@ -87,7 +108,7 @@ try {
   await application?.close();
   try {
     if (dirname(resolve(directory)) !== resolve(tmpdir())) throw new Error("Desktop profile cleanup escaped its temporary directory");
-    rmSync(directory, {
+    if (!externalProfile) rmSync(directory, {
       recursive: true,
       force: true,
       maxRetries: 10,

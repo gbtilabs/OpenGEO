@@ -1,0 +1,154 @@
+name: Review and publish beta packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact reviewed commit on master
+        required: true
+        type: string
+      review_release:
+        description: Private draft release ID for candidates and review
+        required: true
+        type: string
+      phase:
+        required: true
+        type: choice
+        options: [prepare, audit, publish]
+      candidate_run:
+        description: Original prepare run ID for audit or publication
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release-${{ inputs.review_release }}-${{ inputs.phase }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  REVIEW_SOURCE: ${{ inputs.source }}
+  REVIEW_RELEASE: ${{ inputs.review_release }}
+  CANDIDATE_RUN: ${{ inputs.candidate_run }}
+
+jobs:
+  candidate:
+    if: inputs.phase == 'prepare' && github.repository == 'surfacedby/OpenGEO'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: windows-x64
+            platform: win
+            arch: x64
+          - os: macos-15
+            target: macos-arm64
+            platform: mac
+            arch: arm64
+          - os: macos-15-intel
+            target: macos-x64
+            platform: mac
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      REVIEW_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - name: Verify immutable source and release scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release-review.py scope
+      - run: npm ci
+      - run: npm run check:public
+      - run: npm test
+      - run: python tests/release_files_test.py
+      - run: npm run audit:deps
+      - run: node scripts/clean-build.mjs --desktop-installer --platform=${{ matrix.platform }} --arch=${{ matrix.arch }} --desktop-output=release/candidate
+      - name: Seal Mac bundle and browser resources
+        if: matrix.platform == 'mac'
+        run: node scripts/seal-release-mac.mjs
+      - name: Install, update, operate, remove and privately retain exact package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/prepare-release-candidate.py
+
+  docker:
+    if: inputs.phase == 'prepare' && github.repository == 'surfacedby/OpenGEO'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - run: npm run check:public
+      - run: docker build --tag opengeo:release .
+      - run: node scripts/docker-smoke.mjs opengeo:release
+
+  audit:
+    if: inputs.phase == 'audit' && github.repository == 'surfacedby/OpenGEO'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [windows-x64, macos-arm64, macos-x64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      REVIEW_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - name: Audit exact private payload, upstream provenance and complete history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENGEO_RELEASE_REVIEW: ${{ secrets.OPENGEO_RELEASE_REVIEW }}
+        run: python scripts/release-review.py audit
+
+  publish:
+    if: inputs.phase == 'publish' && github.repository == 'surfacedby/OpenGEO'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - name: Publish only exact approved packages and verify anonymous downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release-review.py publish

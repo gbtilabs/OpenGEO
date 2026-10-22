@@ -54,7 +54,7 @@ if (desktop) {
     try {
       for (const script of ['prepare-browser.mjs', 'prepare-native.mjs'])
         execFileSync(process.execPath, [resolve('scripts', script)], { env: environment, stdio: 'inherit' });
-      run('electron-builder', 'electron-builder', ['--' + target, '--' + architecture, ...(process.argv.includes('--desktop-installer') ? [] : ['--dir']), '--config.directories.output=' + output]);
+      run('electron-builder', 'electron-builder', ['--' + target, '--' + architecture, ...(process.argv.includes('--desktop-installer') ? [] : ['--dir']), '--config.directories.output=' + output, '--publish', 'never']);
     } finally {
       restored = false;
       for (const file of original) {
