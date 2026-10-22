@@ -102,6 +102,8 @@ export class RemoteAccess {
   }
   async guard(req: FastifyRequest, res: FastifyReply) {
     res.header("Cache-Control", "no-store");
+    // Native form POSTs get an opaque Origin under no-referrer. Keep their same-origin check verifiable without sending referrers to other sites.
+    res.header("Referrer-Policy", "same-origin");
     const host = req.headers.host, remoteHost = new URL(this.config.origin).host;
     if (host === remoteHost) res.header("Strict-Transport-Security", "max-age=31536000");
     let local = false;

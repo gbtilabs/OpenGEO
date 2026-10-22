@@ -72,7 +72,7 @@ docker compose up --build -d
 
 Open <http://localhost:4318>, or the port you set in `OPENGEO_PORT`. The setup script creates an encryption secret in `.local/encryption-secret`. Keep the `.local` directory owner-only (mode 700); the mounted secret file must be readable by the container's unprivileged user (mode 644). If Node.js is unavailable, create the file with at least 32 random bytes using your operating system's secure random generator and apply those permissions.
 
-Keep the Docker data volume and encryption secret when updating. Source and Docker backups require you to preserve both separately. Do not expose the backend directly to the internet; see [remote access](#remote-access) for reaching it from another machine. For ChatGPT sign-in, the browser must reach the callback on the OpenGEO host; see [connections](connections.md#chatgpt).
+Keep the Docker data volume and encryption secret when updating. Source and Docker backups require you to preserve both separately. Do not expose the backend directly to the internet; see [remote access](#remote-access) for reaching it from another machine. ChatGPT sign-in uses a loopback callback; the [connection guide](connections.md#chatgpt) explains forwarding and the optional remote completion flow.
 
 ## Remote access
 

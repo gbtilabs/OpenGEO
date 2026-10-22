@@ -24,6 +24,7 @@ async function fixture() {
   const request = (url: string, extra: any = {}) => runtime.app.inject({ url, ...extra, headers: { host, ...extra.headers } });
   async function login() {
     const page = await request("/login");
+    assert.equal(page.headers["referrer-policy"], "same-origin");
     const response = await request("/login", { method: "POST", headers: { origin, cookie: cookie(page) }, payload: { key, csrf: hidden(page.body) } });
     assert.equal(response.statusCode, 303); assert.equal(response.headers.location, "/");
     return { response, cookie: cookie(response) };

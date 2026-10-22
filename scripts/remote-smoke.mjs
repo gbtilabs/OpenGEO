@@ -23,6 +23,7 @@ const key = randomBytes(32).toString("hex");
 writeFileSync(keyFile, key, { mode: 0o644, flag: "wx" });
 const proxy = httpsServer();
 let browser;
+const browserPosts = [];
 const docker = args => execFileSync("docker", args, { encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
 let compose;
 try {
@@ -72,6 +73,11 @@ try {
   browser = await chromium.launch({ args: ["--host-resolver-rules=MAP opengeo.example.test 127.0.0.1, MAP evil.example.test 127.0.0.1", "--no-proxy-server"] });
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });
   const page = await context.newPage();
+  page.on("request", req => {
+    const url = new URL(req.url());
+    if (req.method() === "POST" && ["/login", "/logout"].includes(url.pathname))
+      browserPosts.push({ path: url.pathname, origin: req.headers().origin ?? null });
+  });
   await page.goto(origin); await page.waitForURL(origin + "/login");
   await page.getByLabel("Workspace access key").waitFor();
   assert.equal(await page.getByLabel("Workspace access key").inputValue(), "");
@@ -112,6 +118,10 @@ try {
     crossOriginAndCrossSiteDenied: true, browserCrossSiteLogoutDenied: true, copiedCookieRevokedAfterLogout: true, keyRotationRevokedAccess: true,
     providerCredentialsLoaded: false, realProviderSignInAttempted: false, actualTailscaleTailnetTested: false };
   writeFileSync(join(output, "receipt.json"), JSON.stringify(receipt, null, 2)); console.log(JSON.stringify(receipt));
+} catch (error) {
+  // Keep useful transport evidence without form bodies, cookies, keys or provider payloads.
+  writeFileSync(join(output, "failure.json"), JSON.stringify({ errorType: error.name, browserPosts }, null, 2));
+  throw error;
 } finally {
   await browser?.close();
   await new Promise(resolveClose => proxy.close(resolveClose));
