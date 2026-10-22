@@ -16,6 +16,8 @@ test('artifact links require an existing physical target inside the audited tree
     symlinkSync(root, join(payload, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
     assert.equal(containedArtifactLink(payload, join(payload, 'escape')), null);
     if (process.platform !== 'win32') {
+      const rootAlias = join(root, 'root-alias'); symlinkSync('payload', rootAlias, 'dir');
+      assert.equal(containedArtifactLink(rootAlias, join(rootAlias, 'alias')).resolved, 'physical');
       symlinkSync('missing', join(payload, 'broken'));
       symlinkSync('cycle', join(payload, 'cycle'));
       assert.equal(containedArtifactLink(payload, join(payload, 'broken')), null);
