@@ -108,6 +108,8 @@ def extract_bundle(archive, destination):
                 target.chmod(member.mode)
             else:
                 target.symlink_to(member.linkname)
+                if os.chmod in os.supports_follow_symlinks:
+                    target.chmod(member.mode, follow_symlinks=False)
         for member in reversed(members):
             if member.isdir():
                 (destination / member.name).chmod(member.mode)
