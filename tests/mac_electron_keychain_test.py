@@ -17,14 +17,13 @@ class ElectronKeychain(unittest.TestCase):
         self.assertEqual(os.environ['RUNNER_OS'], 'macOS')
         root = Path(__file__).resolve().parents[1]
         temporary = Path(os.environ['RUNNER_TEMP']).resolve()
+        locked = json.loads((root / 'package-lock.json').read_text())['packages']['node_modules/electron']['version']
+        self.assertEqual(json.loads((root / 'node_modules/electron/package.json').read_text())['version'], locked)
+        self.assertNotIn('ELECTRON_OVERRIDE_DIST_PATH', os.environ)
         directory = Path(tempfile.mkdtemp(prefix='release-macos-electron-', dir=temporary))
-        runtime = root / 'node_modules/electron/dist/Electron.app'
         installed = directory / 'installation/OpenGEO.app'
         apps = [directory / ('build-' + str(number)) / 'OpenGEO.app' for number in [1, 2]]
         controller = directory / 'keychain-fixture'
-        locked = json.loads((root / 'package-lock.json').read_text())['packages']['node_modules/electron']['version']
-        self.assertEqual(json.loads((root / 'node_modules/electron/package.json').read_text())['version'], locked)
-        self.assertTrue(runtime.is_dir())
 
         def inspect(stage, pid=None):
             command = [str(controller), 'inspect', str(directory), str(installed), str(apps[1])]
@@ -60,6 +59,17 @@ class ElectronKeychain(unittest.TestCase):
             print(json.dumps({'electronStorage': record}), flush=True)
 
         try:
+            # The installed package resolves its locked runtime lazily. Keep its
+            # download chatter separate from the executable path being verified.
+            resolved = directory / 'electron-runtime.json'
+            result = subprocess.run(['node', '-e', 'const fs=require("node:fs");const executable=require("electron");fs.writeFileSync(process.argv[1],JSON.stringify({executable}));',
+                                     str(resolved)], cwd=root, capture_output=True, text=True, timeout=180)
+            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+            executable = Path(json.loads(resolved.read_text())['executable']).resolve(strict=True)
+            runtime = executable.parents[2]
+            self.assertEqual(runtime, (root / 'node_modules/electron/dist/Electron.app').resolve())
+            self.assertTrue(runtime.is_dir())
+            self.assertEqual((runtime.parent / 'version').read_text().strip().removeprefix('v'), locked)
             subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation', '-framework', 'Security', str(root / 'scripts/mac-keychain-fixture.m'), '-o', str(controller)], check=True, timeout=30)
             for number, app in enumerate(apps, 1):
                 app.parent.mkdir()
