@@ -15,8 +15,8 @@ static NSString *keychainPath(SecKeychainRef keychain) {
   fixtureStatus(SecKeychainGetPath(keychain, &size, path), @"Read keychain path");
   return [[NSString alloc] initWithBytes:path length:strlen(path) encoding:NSUTF8StringEncoding];
 }
-static NSArray *searchPaths(void) {
-  CFArrayRef list = NULL; fixtureStatus(SecKeychainCopySearchList(&list), @"Read search list");
+static NSArray *searchPaths(SecPreferencesDomain domain) {
+  CFArrayRef list = NULL; fixtureStatus(SecKeychainCopyDomainSearchList(domain, &list), @"Read declared domain search list");
   NSMutableArray *paths = [NSMutableArray array];
   for (id object in (__bridge NSArray *)list) [paths addObject:keychainPath((__bridge SecKeychainRef)object)];
   CFRelease(list); return paths;
@@ -34,8 +34,9 @@ static void restore(NSDictionary *state) {
   fixtureStatus(SecKeychainSetDefault(original), @"Restore original default"); CFRelease(original);
   NSMutableArray *list = [NSMutableArray array];
   for (NSString *path in state[@"search"]) { SecKeychainRef keychain = openKeychain(path); [list addObject:CFBridgingRelease(keychain)]; }
-  fixtureStatus(SecKeychainSetSearchList((__bridge CFArrayRef)list), @"Restore original search list");
-  fixtureRequire([searchPaths() isEqual:state[@"search"]], @"Original search list did not restore exactly");
+  fixtureStatus(SecKeychainSetDomainSearchList(kSecPreferencesDomainUser, (__bridge CFArrayRef)list), @"Restore original user search list");
+  fixtureRequire([searchPaths(kSecPreferencesDomainUser) isEqual:state[@"search"]], @"Original user search list did not restore exactly");
+  fixtureRequire([searchPaths(kSecPreferencesDomainSystem) isEqual:state[@"systemSearch"]] && [searchPaths(kSecPreferencesDomainDynamic) isEqual:state[@"dynamicSearch"]], @"System or dynamic keychains changed");
   SecKeychainRef observed = NULL; fixtureStatus(SecKeychainCopyDefault(&observed), @"Read restored default");
   fixtureRequire([keychainPath(observed) isEqual:state[@"default"]], @"Original default did not restore exactly"); CFRelease(observed);
   if ([[NSFileManager defaultManager] fileExistsAtPath:state[@"fixture"]]) {
@@ -60,10 +61,12 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
       return 0;
     }
     fixtureRequire([mode isEqual:@"setup"] && argc == 5 && ![[NSFileManager defaultManager] fileExistsAtPath:stateFile], @"Never replace an existing fixture");
+    SecPreferencesDomain domain; fixtureStatus(SecKeychainGetPreferenceDomain(&domain), @"Read active preference domain");
+    fixtureRequire(domain == kSecPreferencesDomainUser, @"Only the disposable runner's user domain is authorized");
     SecKeychainRef original = NULL; fixtureStatus(SecKeychainCopyDefault(&original), @"Read original default");
     NSString *path = [directory stringByAppendingPathComponent:@"upgrade-fixture.keychain-db"];
     fixtureRequire(![[NSFileManager defaultManager] fileExistsAtPath:path], @"Fixture path already exists");
-    NSDictionary *state = @{@"default":keychainPath(original), @"search":searchPaths(), @"fixture":path}; CFRelease(original);
+    NSDictionary *state = @{@"default":keychainPath(original), @"search":searchPaths(kSecPreferencesDomainUser), @"systemSearch":searchPaths(kSecPreferencesDomainSystem), @"dynamicSearch":searchPaths(kSecPreferencesDomainDynamic), @"fixture":path}; CFRelease(original);
     SecTrustedApplicationRef oldApp = NULL, newApp = NULL;
     fixtureStatus(SecTrustedApplicationCreateFromPath(argv[3], &oldApp), @"Bind old installer code");
     fixtureStatus(SecTrustedApplicationCreateFromPath(argv[4], &newApp), @"Bind new installer code");
@@ -95,8 +98,11 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
       fixtureRequire(expectedPrograms.count == 2 && [expectedPrograms isEqual:observedPrograms], @"Trusted application identities changed");
       CFRelease(applications); if (description) CFRelease(description); CFRelease(acls); CFRelease(actual); CFRelease(item); CFRelease(access);
       fixtureStatus(SecKeychainSetDefault(fixture), @"Select owned fixture default");
-      fixtureStatus(SecKeychainSetSearchList((__bridge CFArrayRef)@[(__bridge id)fixture]), @"Select only owned fixture search list");
-      fixtureRequire([searchPaths() isEqual:@[path]], @"Fixture search list differs");
+      // The combined API also returns system and dynamic keychains, which are
+      // outside this fixture's authority. Replace and verify only the user list.
+      fixtureStatus(SecKeychainSetDomainSearchList(kSecPreferencesDomainUser, (__bridge CFArrayRef)@[(__bridge id)fixture]), @"Select only owned fixture user search list");
+      fixtureRequire([searchPaths(kSecPreferencesDomainUser) isEqual:@[path]], @"Fixture user search list differs");
+      fixtureRequire([searchPaths(kSecPreferencesDomainSystem) isEqual:state[@"systemSearch"]] && [searchPaths(kSecPreferencesDomainDynamic) isEqual:state[@"dynamicSearch"]], @"System or dynamic keychains changed");
       writeJSON(@{@"syntheticItemOnly":@YES, @"trustedDecryptClients":@2, @"explicitFixtureOwnerConsent":@YES, @"realLoginKeychainUntouched":@YES,
         @"scope":@"Preauthorization of exact old and new code identities in one disposable keychain; not an automated system-dialog test"}, [directory stringByAppendingPathComponent:@"keychain-consent.json"]);
       CFRelease(fixture);

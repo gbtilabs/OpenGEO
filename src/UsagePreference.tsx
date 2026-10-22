@@ -4,9 +4,11 @@ import { api } from "./api";
 import identity from "../brand/identity.json";
 import "./usage.css";
 
-export function UsagePreference({ compact = false }: { compact?: boolean }) {
+export function UsagePreference({ compact = false, onReadyChange }: { compact?: boolean; onReadyChange?: (ready: boolean) => void }) {
   const [enabled, setEnabled] = useState(false), [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(""), [retry, setRetry] = useState(0);
   const [pendingValue, setPendingValue] = useState<boolean | null>(null);
+  // Setup must not finalize consent while a displayed privacy choice is still being saved.
+  useEffect(() => { onReadyChange?.(ready && !busy && !error); }, [ready, busy, error, onReadyChange]);
   useEffect(() => { let stopped = false; setError(""); void api<{ enabled: boolean }>("/settings/usage-sharing").then(value => { if (!stopped) { setEnabled(value.enabled); setReady(true); } }).catch(() => { if (!stopped) setError("This preference could not be loaded. Usage sharing stays unchanged."); }); return () => { stopped = true; }; }, [retry]);
   async function change(next: boolean) {
     setPendingValue(next); setBusy(true); setError("");

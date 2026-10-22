@@ -44,6 +44,7 @@ export function Onboarding({ connected, profiles, refresh, finish, cancel, initi
   const [resumeReview, setResumeReview] = useState<{ id: string; uncertainRequests: number } | null>(null);
   const [reviewedRequests, setReviewedRequests] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [usageReady, setUsageReady] = useState(false);
   useEffect(() => {
     if (provider !== "console" || !connected.console) return;
     let current = true;
@@ -118,7 +119,7 @@ export function Onboarding({ connected, profiles, refresh, finish, cancel, initi
     catch (failure) { setError(failure); }
     finally { setBusy(false); }
   }
-  function go(next: number) { setError(""); setStep(next); }
+  function go(next: number) { setError(""); setUsageReady(false); setStep(next); }
   async function continueConnection(onlyLocal: boolean) {
     if (!onlyLocal && !connectionReady) return;
     await api("/onboarding/draft", { ...makeDraft(1), localOnly: onlyLocal }, "PUT");
@@ -172,7 +173,7 @@ export function Onboarding({ connected, profiles, refresh, finish, cancel, initi
     setProject(saved); go(3);
   }
   async function start() {
-    if (!project) return;
+    if (!project || !usageReady) return;
     if (!localOnly && provider === "chatgpt" && !checkId) {
       const job = await api<Job>("/onboarding/check", { projectId: project.id });
       setCheckId(job.id); setCheck(job); return;
@@ -239,8 +240,8 @@ export function Onboarding({ connected, profiles, refresh, finish, cancel, initi
           {check && <section className="setup-check-status" aria-live="polite"><h2>{["queued", "running"].includes(check.status) ? <LoaderCircle className="loading-spin" size={19} /> : <Users size={19} />}{check.status === "completed" ? "Choose competitors to follow" : check.progress}</h2>
             {check.status === "completed" ? <><p>These businesses were named and cited in your answers. Choose which belong in your comparison.</p>{competingSites(check).map(item => <label className="competitor-choice" key={item.domain}><input type="checkbox" checked={selectedCompetitors.includes(item.domain)} onChange={event => setSelectedCompetitors(current => event.target.checked ? [...current, item.domain] : current.filter(domain => domain !== item.domain))} /><div><strong>{item.name}</strong><small>{item.domain}</small><p>{item.reason}</p></div></label>)}{!competingSites(check).length && <p>No competitors had enough supporting evidence in these answers. You can add them later.</p>}</> : <><p>{["queued", "running"].includes(check.status) ? "Your answers and citations are saved as they arrive." : "Saved answers are kept. Open your dashboard to review or resume this check."}</p>{["queued", "running"].includes(check.status) && <button className="secondary" disabled={busy} onClick={() => void run(() => api("/jobs/" + check.id + "/cancel", {}))}>Stop check</button>}</>}
           </section>}
-          <UsagePreference compact />
-          <div className="setup-actions"><button className="secondary" disabled={busy || !!checkId} onClick={() => go(localOnly ? 1 : 2)}><ArrowLeft size={15} />Back</button><button className="primary" disabled={busy} onClick={() => void run(start)}>{busy ? <LoaderCircle className="loading-spin" size={16} /> : <ScanSearch size={16} />}{busy ? "Starting..." : checkId ? "Open dashboard" : !localOnly && provider === "chatgpt" ? "Check my questions" : "Open workspace & audit"}</button></div>
+          <UsagePreference compact onReadyChange={setUsageReady} />
+          <div className="setup-actions"><button className="secondary" disabled={busy || !!checkId} onClick={() => go(localOnly ? 1 : 2)}><ArrowLeft size={15} />Back</button><button className="primary" disabled={busy || !usageReady} onClick={() => void run(start)}>{busy ? <LoaderCircle className="loading-spin" size={16} /> : <ScanSearch size={16} />}{busy ? "Starting..." : checkId ? "Open dashboard" : !localOnly && provider === "chatgpt" ? "Check my questions" : "Open workspace & audit"}</button></div>
         </>}
       </section></div>
     </main>

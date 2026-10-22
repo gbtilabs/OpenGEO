@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   candidate:
-    if: github.repository == 'surfacedby/OpenGEO'
+    if: github.repository == 'surfacedby/OpenGEO' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.architecture == 'x64' && '{"include":[{"os":"macos-15-intel","arch":"x64"}]}' || inputs.architecture == 'arm64' && '{"include":[{"os":"macos-15","arch":"arm64"}]}' || '{"include":[{"os":"macos-15","arch":"arm64"},{"os":"macos-15-intel","arch":"x64"}]}') }}

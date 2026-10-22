@@ -20,6 +20,14 @@ Create a GitHub prerelease against the exact reviewed source commit. Include `SH
 
 ### 1. Check source, dependencies and platform behavior
 
+Run available tests and checks locally before pushing changes. Application CI is
+manual and restricted to `master` for an actual release; pushes and pull requests
+do not start it. Reserve hosted runners for the final source verification and
+native release builds, installation checks and artifact review.
+After building the web application, `npm run test:browser` exercises setup against
+the actual local API with delayed privacy-preference requests. Use an installed
+Chromium, or set `OPENGEO_TEST_BROWSER` to an existing browser executable.
+
 Installation configures a local pre-push boundary check. CI also checks the full
 history. These checks include hidden and ignored private source files; dependency
 and build directories receive their separate distribution review. They supplement
@@ -101,7 +109,8 @@ Mac fresh startup uses the runner's normal Keychain. The encrypted upgrade check
 uses one disposable Keychain containing a synthetic item whose decrypt ACL names
 only the exact old and new code identities. This represents explicit fixture-owner
 consent; it does not automate or bypass the macOS password dialog. The original
-default and search list are restored and the disposable Keychain is removed even
+default and user search list are restored, system and dynamic lists are preserved,
+and the disposable Keychain is removed even
 after a failed check. No existing Keychain item, TCC setting, publisher identity or
 application credential protection is changed. Record that scope in the package
 receipt and disclose the end-user Keychain approval in the update guide.

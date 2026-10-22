@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   compose:
-    if: github.repository == 'surfacedby/OpenGEO'
+    if: github.repository == 'surfacedby/OpenGEO' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -40,6 +40,8 @@ jobs:
           number, head = os.environ['PR_NUMBER'], os.environ['REVIEWED_HEAD']
           assert re.fullmatch(r'[1-9][0-9]*', number)
           assert re.fullmatch(r'[0-9a-f]{40}', head)
+          master = json.loads(subprocess.check_output(['gh', 'api', 'repos/surfacedby/OpenGEO/git/ref/heads/master']))
+          assert head == master['object']['sha'], 'Hosted verification is reserved for the master release source'
           pr = json.loads(subprocess.check_output(['gh', 'api', 'repos/surfacedby/OpenGEO/pulls/' + number]))
           assert pr['base']['repo']['full_name'] == 'surfacedby/OpenGEO'
           if pr['state'] == 'open':

@@ -42,7 +42,12 @@ try {
   await page
     .getByRole("button", { name: "Continue", exact: true })
     .click();
+  // The previous released beta permits navigation during this save. Observe its
+  // actual response before continuing; do not seed an unconfirmed privacy choice.
+  const savedPreference = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings/usage-sharing' && response.request().method() === 'PUT');
   await page.getByRole("checkbox", { name: "Help improve OpenGEO by sharing usage", exact: true }).uncheck();
+  const saved = await savedPreference;
+  if (!saved.ok() || (await saved.json()).enabled !== false) throw new Error('Usage sharing withdrawal was not saved');
   await page.getByRole("button", { name: "Open workspace & audit", exact: true }).click();
   }
   await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();

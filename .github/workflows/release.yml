@@ -41,7 +41,7 @@ env:
 
 jobs:
   candidate:
-    if: inputs.phase == 'prepare' && github.repository == 'surfacedby/OpenGEO'
+    if: inputs.phase == 'prepare' && github.repository == 'surfacedby/OpenGEO' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.target == 'macos-arm64' && '{"include":[{"os":"macos-15","target":"macos-arm64","platform":"mac","arch":"arm64"}]}' || inputs.target == 'macos-x64' && '{"include":[{"os":"macos-15-intel","target":"macos-x64","platform":"mac","arch":"x64"}]}' || inputs.target == 'windows-x64' && '{"include":[{"os":"windows-2022","target":"windows-x64","platform":"win","arch":"x64"}]}' || '{"include":[{"os":"windows-2022","target":"windows-x64","platform":"win","arch":"x64"},{"os":"macos-15","target":"macos-arm64","platform":"mac","arch":"arm64"},{"os":"macos-15-intel","target":"macos-x64","platform":"mac","arch":"x64"}]}') }}
@@ -84,7 +84,7 @@ jobs:
         run: python scripts/retain-release-failure.py
 
   docker:
-    if: inputs.phase == 'prepare' && inputs.target == 'all' && github.repository == 'surfacedby/OpenGEO'
+    if: inputs.phase == 'prepare' && inputs.target == 'all' && github.repository == 'surfacedby/OpenGEO' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
       matrix:
@@ -106,7 +106,7 @@ jobs:
       - run: node scripts/docker-smoke.mjs opengeo:release
 
   audit:
-    if: inputs.phase == 'audit' && github.repository == 'surfacedby/OpenGEO'
+    if: inputs.phase == 'audit' && github.repository == 'surfacedby/OpenGEO' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
       matrix:
@@ -133,7 +133,7 @@ jobs:
         run: python scripts/release-review.py audit
 
   publish:
-    if: inputs.phase == 'publish' && github.repository == 'surfacedby/OpenGEO'
+    if: inputs.phase == 'publish' && github.repository == 'surfacedby/OpenGEO' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
