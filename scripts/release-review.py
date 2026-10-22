@@ -47,9 +47,10 @@ def manual_review_metadata(payload, app, asar, native_files, app_files, provenan
     files = []
     selected = {(str(payload), row['path']) for row in provenance['differencesRequireReview']}
     selected.update((str(app), row['path']) for row in findings if row.get('scope') == 'artifact:app-asar')
+    selected.update((str(payload), row['path']) for row in findings if row.get('scope') == 'artifact:payload' and row.get('path') == 'Uninstall OpenGEO.exe')
     for home, relative in sorted(selected):
         path = Path(home) / relative
-        if path.name not in ['package.json', 'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'CodeResources'] and path.suffix != '.plist':
+        if path.name not in ['package.json', 'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'CodeResources', 'Uninstall OpenGEO.exe'] and path.suffix != '.plist':
             continue
         canonical = path.resolve(strict=True)
         assert canonical.is_relative_to(Path(home).resolve())
