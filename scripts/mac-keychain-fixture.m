@@ -143,6 +143,30 @@ static void inspectFixture(NSDictionary *state, const char *first, const char *s
   fixtureStatus(SecKeychainSearchCreateFromAttributes(fixture, kSecGenericPasswordItemClass, &list, &search), @"Find owned item metadata for observation");
   OSStatus found = SecKeychainSearchCopyNext(search, &item); CFRelease(search);
   NSMutableDictionary *record = [@{@"itemStatus":@((int)found), @"firstStaticCode":codePartition(@(first)), @"secondStaticCode":codePartition(@(second))} mutableCopy];
+  SecKeychainStatus keychainStatus = 0;
+  fixtureStatus(SecKeychainGetStatus(fixture, &keychainStatus), @"Observe owned Keychain lock state");
+  record[@"keychainUnlocked"] = @((keychainStatus & kSecUnlockStateStatus) != 0);
+  // Compare metadata APIs without asking for any secret or allowing UI. Only
+  // this disposable Keychain is searched, including items created by the probe.
+  CFTypeRef metadata = NULL;
+  NSDictionary *query = @{(__bridge NSString *)kSecClass:(__bridge NSString *)kSecClassGenericPassword,
+    (__bridge NSString *)kSecMatchSearchList:@[(__bridge id)fixture],
+    (__bridge NSString *)kSecMatchLimit:(__bridge NSString *)kSecMatchLimitAll,
+    (__bridge NSString *)kSecReturnAttributes:@YES,
+    (__bridge NSString *)kSecUseAuthenticationUI:(__bridge NSString *)kSecUseAuthenticationUIFail};
+  OSStatus metadataStatus = SecItemCopyMatching((__bridge CFDictionaryRef)query, &metadata);
+  record[@"genericMetadataStatus"] = @((int)metadataStatus);
+  if (metadataStatus == errSecSuccess) {
+    fixtureRequire(metadata && CFGetTypeID(metadata) == CFArrayGetTypeID() && CFArrayGetCount(metadata) <= 8, @"Bounded owned-item metadata required");
+    NSMutableArray *rows = [NSMutableArray array];
+    for (NSDictionary *row in (__bridge NSArray *)metadata) {
+      NSString *serviceName = row[(__bridge NSString *)kSecAttrService], *accountName = row[(__bridge NSString *)kSecAttrAccount];
+      fixtureRequire([serviceName isKindOfClass:NSString.class] && serviceName.length < 128 && [accountName isKindOfClass:NSString.class] && accountName.length < 128, @"Expected bounded synthetic item names");
+      [rows addObject:@{@"service":serviceName, @"account":accountName}];
+    }
+    record[@"genericItems"] = rows;
+  }
+  if (metadata) CFRelease(metadata);
   if (found == errSecSuccess) {
     record[@"partitions"] = itemPartitions(item);
     SecAccessRef access = NULL; fixtureStatus(SecKeychainItemCopyAccess(item, &access), @"Read owned decrypt ACL metadata");
