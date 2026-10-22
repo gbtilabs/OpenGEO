@@ -67,7 +67,11 @@ def smoke(executable, phase=None):
     if phase:
         command += ['--profile', str(profile), '--phase', phase, '--receipt', str(receipt)]
     with (out / ('smoke-' + (phase or 'fresh') + '.stdout')).open('wb') as stdout, (out / ('smoke-' + (phase or 'fresh') + '.stderr')).open('wb') as stderr:
-        subprocess.run(command, stdout=stdout, stderr=stderr, check=True, timeout=180)
+        result = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=180)
+    if result.returncode:
+        # This isolated test profile contains synthetic data; retain the actual failure in the job log too.
+        print((out / ('smoke-' + (phase or 'fresh') + '.stderr')).read_text(), file=sys.stderr)
+        raise RuntimeError('Installed workflow failed at phase ' + str(phase))
 
 
 old_executable = install(previous)
@@ -83,9 +87,13 @@ if suffix == '.exe':
     assert set(actual) - set(expected) == {'Uninstall OpenGEO.exe'}
     shutil.copytree(installation, payload)
     signature_script = out / 'signature.ps1'
-    signature_script.write_text('param([string]$Installer)\n(Get-AuthenticodeSignature -LiteralPath $Installer).Status\n')
-    result = subprocess.run(['powershell', '-NoProfile', '-File', str(signature_script), '-Installer', str(candidate)], capture_output=True, text=True, check=True)
-    assert result.stdout.strip() == 'NotSigned'
+    signature_result = out / 'signature.json'
+    signature_script.write_text('param([string]$Installer,[string]$Output)\n$ErrorActionPreference="Stop"\n@{status=[string](Get-AuthenticodeSignature -LiteralPath $Installer).Status} | ConvertTo-Json -Compress | Set-Content -LiteralPath $Output -Encoding utf8\n')
+    result = subprocess.run(['powershell', '-NoProfile', '-File', str(signature_script), '-Installer', str(candidate), '-Output', str(signature_result)], capture_output=True, check=True)
+    (out / 'signature.stdout').write_bytes(result.stdout)
+    (out / 'signature.stderr').write_bytes(result.stderr)
+    actual_signature = json.loads(signature_result.read_text(encoding='utf-8-sig'))
+    assert actual_signature['status'] == 'NotSigned', repr(actual_signature)
     signatures = {'windowsAuthenticode': 'NotSigned'}
     uninstaller = installation / 'Uninstall OpenGEO.exe'
     subprocess.run([str(uninstaller), '/S', '_?=' + str(installation)], check=True, timeout=180)

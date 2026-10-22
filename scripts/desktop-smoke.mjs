@@ -14,6 +14,7 @@ const defaultExecutable = process.platform === "darwin"
   ? join(root, process.arch === "arm64" ? "mac-arm64" : "mac", identity.name + ".app", "Contents/MacOS", identity.name)
   : join(root, "win-unpacked", identity.name + ".exe");
 let application;
+let browserError = "";
 try {
   const executable = resolve(process.argv[2] && process.argv[2] !== "--verification" ? process.argv[2] : defaultExecutable);
   if (!existsSync(executable)) throw new Error("Build the desktop verification package before running its checks");
@@ -23,6 +24,7 @@ try {
     env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => systemNames.has(name.toUpperCase()))), OPENGEO_DESKTOP_DATA_DIR: directory },
     timeout: 30000,
   });
+  application.process().stderr?.on('data', bytes => { browserError = (browserError + bytes.toString()).slice(-65536); });
   const page = await application.firstWindow();
   if (phase !== "verify") {
   await page
@@ -102,6 +104,7 @@ try {
     }),
   );
 } catch (error) {
+  if (browserError) console.error(browserError);
   console.error(error);
   process.exitCode = 1;
 } finally {

@@ -19,6 +19,11 @@ on:
         description: Original prepare run ID for audit or publication
         type: string
         default: ''
+      target:
+        description: Native target, or all for a complete release
+        type: choice
+        default: all
+        options: [all, macos-arm64, macos-x64, windows-x64]
 
 permissions:
   contents: write
@@ -39,20 +44,7 @@ jobs:
     if: inputs.phase == 'prepare' && github.repository == 'surfacedby/OpenGEO'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-2022
-            target: windows-x64
-            platform: win
-            arch: x64
-          - os: macos-15
-            target: macos-arm64
-            platform: mac
-            arch: arm64
-          - os: macos-15-intel
-            target: macos-x64
-            platform: mac
-            arch: x64
+      matrix: ${{ fromJSON(inputs.target == 'macos-arm64' && '{"include":[{"os":"macos-15","target":"macos-arm64","platform":"mac","arch":"arm64"}]}' || inputs.target == 'macos-x64' && '{"include":[{"os":"macos-15-intel","target":"macos-x64","platform":"mac","arch":"x64"}]}' || inputs.target == 'windows-x64' && '{"include":[{"os":"windows-2022","target":"windows-x64","platform":"win","arch":"x64"}]}' || '{"include":[{"os":"windows-2022","target":"windows-x64","platform":"win","arch":"x64"},{"os":"macos-15","target":"macos-arm64","platform":"mac","arch":"arm64"},{"os":"macos-15-intel","target":"macos-x64","platform":"mac","arch":"x64"}]}') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -83,10 +75,16 @@ jobs:
       - name: Install, update, operate, remove and privately retain exact package
         env:
           GH_TOKEN: ${{ github.token }}
+          DEBUG: pw:browser
         run: python scripts/prepare-release-candidate.py
+      - name: Retain actual failure diagnostics privately
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/retain-release-failure.py
 
   docker:
-    if: inputs.phase == 'prepare' && github.repository == 'surfacedby/OpenGEO'
+    if: inputs.phase == 'prepare' && inputs.target == 'all' && github.repository == 'surfacedby/OpenGEO'
     strategy:
       fail-fast: false
       matrix:
