@@ -1,5 +1,6 @@
 """Prove scoped native Keychain consent before building any release installer."""
 from pathlib import Path
+import base64
 import json
 import os
 import re
@@ -23,13 +24,20 @@ class KeychainConsent(unittest.TestCase):
             for number, client in enumerate(clients, 1):
                 subprocess.run(['clang', '-fobjc-arc', '-DCLIENT_ID=' + str(number), '-framework', 'Foundation', '-framework', 'Security', 'tests/mac-keychain-client.m', '-o', str(client)], check=True, timeout=30)
                 subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(client)], check=True, timeout=30)
-            subprocess.run([str(controller), 'setup', str(directory), str(clients[0]), str(clients[1])], check=True, timeout=30)
+            password = base64.b64encode(os.urandom(32))
+            subprocess.run([str(controller), 'setup', str(directory), str(clients[0]), str(clients[1])], input=password, check=True, timeout=30)
+            old_read = subprocess.run([str(clients[0]), str(directory / 'upgrade-fixture.keychain-db')], capture_output=True, text=True, timeout=10)
+            self.assertEqual(old_read.returncode, 0, (old_read.stdout, old_read.stderr))
+            new_before_consent = subprocess.run([str(clients[1]), str(directory / 'upgrade-fixture.keychain-db')], capture_output=True, text=True, timeout=10)
+            self.assertEqual(new_before_consent.returncode, 77, (new_before_consent.stdout, new_before_consent.stderr))
+            subprocess.run([str(controller), 'authorize', str(directory), str(clients[0]), str(clients[1])], input=password, check=True, timeout=30)
             results = [subprocess.run([str(client), str(directory / 'upgrade-fixture.keychain-db')], capture_output=True, text=True, timeout=10) for client in clients]
             self.assertEqual([row.returncode for row in results], [0, 0, 77], [(row.returncode, row.stdout, row.stderr) for row in results])
             values = [json.loads(row.stdout) for row in results]
             self.assertEqual([row['client'] for row in values], [1, 2, 3])
             self.assertRegex(values[0]['secretSha256'], r'^[0-9a-f]{64}$')
             self.assertEqual(values[0]['secretSha256'], values[1]['secretSha256'])
+            self.assertEqual(values[0]['secretSha256'], json.loads(old_read.stdout)['secretSha256'])
             self.assertNotIn('secretSha256', values[2])
             consent = json.loads((directory / 'keychain-consent.json').read_text())
             self.assertEqual(len(set(consent['partitionCodeIdentities'])), 2)
