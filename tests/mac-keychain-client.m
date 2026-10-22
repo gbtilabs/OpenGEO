@@ -27,7 +27,7 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
   // Chromium queries through SecItem with the process's configured search list.
   CFTypeRef result = NULL;
   NSDictionary *query = @{(__bridge NSString *)kSecClass:(__bridge NSString *)kSecClassGenericPassword,
-    (__bridge NSString *)kSecAttrService:@"OpenGEO Safe Storage", (__bridge NSString *)kSecAttrAccount:@"OpenGEO",
+    (__bridge NSString *)kSecAttrService:@"OpenGEO Safe Storage", (__bridge NSString *)kSecAttrAccount:@"OpenGEO Key",
     (__bridge NSString *)kSecMatchLimit:(__bridge NSString *)kSecMatchLimitOne,
     (__bridge NSString *)kSecReturnData:@YES, (__bridge NSString *)kSecReturnAttributes:@YES};
   status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
@@ -37,7 +37,7 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
     else { size = (UInt32)CFDataGetLength(data); bytes = (void *)CFDataGetBytePtr(data); }
   }
 #else
-  const char *service = "OpenGEO Safe Storage", *account = "OpenGEO";
+  const char *service = "OpenGEO Safe Storage", *account = "OpenGEO Key";
   status = SecKeychainFindGenericPassword(keychain, (UInt32)strlen(service), service, (UInt32)strlen(account), account, &size, &bytes, NULL);
 #endif
   if (status == errSecSuccess) {

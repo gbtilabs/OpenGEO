@@ -9,6 +9,10 @@
 
 static void fixtureRequire(BOOL condition, NSString *message);
 static void fixtureStatus(OSStatus status, NSString *operation);
+static const char *fixtureServiceName = "OpenGEO Safe Storage";
+// Electron's non-App-Store account suffix avoids its legacy-item migration,
+// which creates a replacement item with only the first application's access.
+static const char *fixtureAccountName = "OpenGEO Key";
 
 static NSString *codePartition(NSString *path) {
   SecStaticCodeRef code = NULL; CFDictionaryRef info = NULL;
@@ -66,7 +70,7 @@ static void authorizePartitions(SecKeychainItemRef item, NSString *path, NSData 
   // Supply this disposable keychain owner's consent to the system tool without
   // putting its random password in process arguments, the environment or a file.
   fixtureRequire([path rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./-"] invertedSet]].location == NSNotFound, @"Unexpected fixture command path");
-  NSString *command = [NSString stringWithFormat:@"set-generic-password-partition-list -a OpenGEO -s \"OpenGEO Safe Storage\" -S %@ -k %@ %@\n", [partitions componentsJoinedByString:@","], [[NSString alloc] initWithData:password encoding:NSUTF8StringEncoding], path];
+  NSString *command = [NSString stringWithFormat:@"set-generic-password-partition-list -a \"%@\" -s \"%@\" -S %@ -k %@ %@\n", @(fixtureAccountName), @(fixtureServiceName), [partitions componentsJoinedByString:@","], [[NSString alloc] initWithData:password encoding:NSUTF8StringEncoding], path];
   NSTask *task = [NSTask new]; NSPipe *input = [NSPipe pipe], *output = [NSPipe pipe];
   task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/security"]; task.arguments = @[@"-i", @"-q"];
   NSMutableDictionary *environment = [NSMutableDictionary dictionary];
@@ -137,7 +141,7 @@ static void inspectFixture(NSDictionary *state, const char *first, const char *s
   validateFixtureState(state);
   fixtureStatus(SecKeychainSetUserInteractionAllowed(false), @"Disable UI for read-only fixture observations");
   SecKeychainRef fixture = openKeychain(state[@"fixture"]);
-  const char *service = "OpenGEO Safe Storage", *account = "OpenGEO";
+  const char *service = fixtureServiceName, *account = fixtureAccountName;
   SecKeychainAttribute attributes[] = {{kSecServiceItemAttr, (UInt32)strlen(service), (void *)service}, {kSecAccountItemAttr, (UInt32)strlen(account), (void *)account}};
   SecKeychainAttributeList list = {2, attributes}; SecKeychainSearchRef search = NULL; SecKeychainItemRef item = NULL;
   fixtureStatus(SecKeychainSearchCreateFromAttributes(fixture, kSecGenericPasswordItemClass, &list, &search), @"Find owned item metadata for observation");
@@ -262,7 +266,7 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
     @try {
       fixtureStatus(SecKeychainCreate(base.fileSystemRepresentation, (UInt32)password.length, password.bytes, false, NULL, &fixture), @"Create owned user Keychain");
       fixtureRequire([keychainPath(fixture) isEqual:path], @"Creation must use the protected user Keychain format");
-      const char *service = "OpenGEO Safe Storage", *account = "OpenGEO";
+      const char *service = fixtureServiceName, *account = fixtureAccountName;
       SecKeychainAttribute attributes[] = {{kSecServiceItemAttr, (UInt32)strlen(service), (void *)service}, {kSecAccountItemAttr, (UInt32)strlen(account), (void *)account}};
       SecKeychainAttributeList attributesList = {2, attributes}; SecKeychainItemRef item = NULL;
       fixtureStatus(SecKeychainItemCreateFromContent(kSecGenericPasswordItemClass, &attributesList, (UInt32)secret.length, secret.bytes, fixture, access, &item), @"Create synthetic OS storage item");
