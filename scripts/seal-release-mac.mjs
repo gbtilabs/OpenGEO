@@ -2,14 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const { signAsync } = require('@electron/osx-sign');
+import { sealMacApplication, makeMacCodeIgnore } from './mac-signing.mjs';
 const arch = process.env.REVIEW_TARGET?.replace('macos-', '');
 if (process.platform !== 'darwin' || !['arm64', 'x64'].includes(arch) || process.arch !== arch) throw new Error('A matching native Mac runner is required');
 const app = path.resolve('release/candidate', arch === 'arm64' ? 'mac-arm64' : 'mac', 'OpenGEO.app');
 const entitlements = path.join(process.env.RUNNER_TEMP, 'preview-jit.plist');
-fs.writeFileSync(entitlements, '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>');
 // These upstream functionless stubs have no load-command padding. Their exact vendor
 // bytes are resources in the enclosing seal; signing them would corrupt dyld fixups.
 const stubHome = 'Contents/Resources/browsers/chromium_headless_shell-1243/chrome-headless-shell-mac-x64/';
@@ -19,19 +16,8 @@ const preserved = arch === 'x64' ? new Map([
 ]) : new Map();
 const verifyStubs = () => { for (const [file, hash] of preserved) if (crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== hash) throw new Error('Vendor resource changed'); };
 verifyStubs();
-const ignore = file => {
-  if (fs.realpathSync(file) !== file || preserved.has(file)) return true;
-  if (fs.statSync(file).isDirectory()) return !file.endsWith('.app') && !file.endsWith('.framework');
-  const fd = fs.openSync(file, 'r'), magic = Buffer.alloc(4);
-  try { fs.readSync(fd, magic, 0, 4, 0); } finally { fs.closeSync(fd); }
-  return !['cffaedfe', 'cefaedfe', 'feedfacf', 'feedface', 'cafebabe', 'cafebabf', 'bebafeca', 'bfbafeca'].includes(magic.toString('hex'));
-};
-await signAsync({ app, identity: '-', identityValidation: false, platform: 'darwin', version: require('electron/package.json').version,
-  strictVerify: true, preAutoEntitlements: false, preEmbedProvisioningProfile: false, ignore,
-  // The locked signer accepts a scalar callback; its array path drops this option.
-  optionsForFile: () => ({ hardenedRuntime: false, entitlements, timestamp: 'none' }) });
+await sealMacApplication(app, entitlements, makeMacCodeIgnore(preserved));
 verifyStubs();
-execFileSync('codesign', ['--verify', '--deep', '--strict', app]);
 const copy = path.resolve('release/mac-sealed', arch === 'arm64' ? 'mac-arm64' : 'mac', 'OpenGEO.app');
 fs.mkdirSync(path.dirname(copy), { recursive: true });
 execFileSync('ditto', [app, copy]);

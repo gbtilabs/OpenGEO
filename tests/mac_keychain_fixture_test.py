@@ -36,6 +36,11 @@ class KeychainConsent(unittest.TestCase):
                 subprocess.run(['clang', '-fobjc-arc', '-DCLIENT_ID=' + str(number), *flags, '-framework', 'Foundation', '-framework', 'Security', 'tests/mac-keychain-client.m', '-o', str(executable)], check=True, timeout=30)
                 subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(client)], check=True, timeout=30)
             subprocess.run([str(controller), 'setup', str(directory), str(clients[0]), str(clients[1])], check=True, timeout=30)
+            observed = subprocess.run([str(controller), 'inspect', str(directory), str(clients[0]), str(clients[1])], capture_output=True, text=True, timeout=10)
+            self.assertEqual(observed.returncode, 0, observed.stderr)
+            observation = json.loads(observed.stdout)
+            self.assertEqual(observation['itemStatus'], 0)
+            self.assertEqual(len(observation['trustedClientDataSha256']), 2)
             if bundled:
                 old = subprocess.run([str(executables[0]), str(directory)], capture_output=True, text=True, timeout=10)
                 self.assertEqual(old.returncode, 0, (old.stdout, old.stderr))
@@ -56,6 +61,7 @@ class KeychainConsent(unittest.TestCase):
             self.assertTrue(all(re.fullmatch('cdhash:[0-9a-f]{40}', value) for value in consent['partitionCodeIdentities']))
             self.assertTrue(consent['unlistedClientDenied'])
             self.assertTrue(consent['protectedKeychainFormat'])
+            self.assertEqual(set(observation['partitions']), set(consent['partitionCodeIdentities']))
         finally:
             if (directory / 'keychain-state.json').exists():
                 subprocess.run([str(controller), 'cleanup', str(directory)], check=True, timeout=30)

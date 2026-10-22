@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
 #import <Security/cssmerr.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
@@ -132,15 +133,80 @@ static void restore(NSDictionary *state) {
   fixtureRequire(![[NSFileManager defaultManager] fileExistsAtPath:state[@"fixture"]] && ![[NSFileManager defaultManager] fileExistsAtPath:state[@"fixtureBase"]], @"Owned Keychain files remain after cleanup");
 }
 
+static void inspectFixture(NSDictionary *state, const char *first, const char *second, const char *pidText) {
+  validateFixtureState(state);
+  fixtureStatus(SecKeychainSetUserInteractionAllowed(false), @"Disable UI for read-only fixture observations");
+  SecKeychainRef fixture = openKeychain(state[@"fixture"]);
+  const char *service = "OpenGEO Safe Storage", *account = "OpenGEO";
+  SecKeychainAttribute attributes[] = {{kSecServiceItemAttr, (UInt32)strlen(service), (void *)service}, {kSecAccountItemAttr, (UInt32)strlen(account), (void *)account}};
+  SecKeychainAttributeList list = {2, attributes}; SecKeychainSearchRef search = NULL; SecKeychainItemRef item = NULL;
+  fixtureStatus(SecKeychainSearchCreateFromAttributes(fixture, kSecGenericPasswordItemClass, &list, &search), @"Find owned item metadata for observation");
+  OSStatus found = SecKeychainSearchCopyNext(search, &item); CFRelease(search);
+  NSMutableDictionary *record = [@{@"itemStatus":@((int)found), @"firstStaticCode":codePartition(@(first)), @"secondStaticCode":codePartition(@(second))} mutableCopy];
+  if (found == errSecSuccess) {
+    record[@"partitions"] = itemPartitions(item);
+    SecAccessRef access = NULL; fixtureStatus(SecKeychainItemCopyAccess(item, &access), @"Read owned decrypt ACL metadata");
+    CFArrayRef acls = SecAccessCopyMatchingACLList(access, kSecACLAuthorizationDecrypt);
+    NSMutableArray *clientHashes = [NSMutableArray array];
+    for (id object in (__bridge NSArray *)acls) {
+      CFArrayRef applications = NULL; CFStringRef description = NULL; SecKeychainPromptSelector selector;
+      fixtureStatus(SecACLCopyContents((__bridge SecACLRef)object, &applications, &description, &selector), @"Observe actual trusted-client metadata");
+      for (id client in (__bridge NSArray *)applications) {
+        CFDataRef data = NULL; fixtureStatus(SecTrustedApplicationCopyData((__bridge SecTrustedApplicationRef)client, &data), @"Read opaque trusted-client metadata");
+        unsigned char hash[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(CFDataGetBytePtr(data), (CC_LONG)CFDataGetLength(data), hash); CFRelease(data);
+        NSMutableString *value = [NSMutableString string];
+        for (NSUInteger index = 0; index < sizeof(hash); index++) [value appendFormat:@"%02x", hash[index]];
+        [clientHashes addObject:value];
+      }
+      if (applications) CFRelease(applications); if (description) CFRelease(description);
+    }
+    record[@"trustedClientDataSha256"] = [clientHashes sortedArrayUsingSelector:@selector(compare:)];
+    if (acls) CFRelease(acls); CFRelease(access); CFRelease(item);
+  }
+  if (pidText) {
+    char *end = NULL; long pid = strtol(pidText, &end, 10);
+    fixtureRequire(end && !*end && pid > 0 && pid <= INT_MAX, @"Expected an owned child PID");
+    SecCodeRef code = NULL;
+    OSStatus status = SecCodeCopyGuestWithAttributes(NULL, (__bridge CFDictionaryRef)@{(__bridge NSString *)kSecGuestAttributePid:@(pid)}, kSecCSDefaultFlags, &code);
+    record[@"processLookupStatus"] = @((int)status);
+    if (status == errSecSuccess) {
+      record[@"processValidityStatus"] = @((int)SecCodeCheckValidity(code, kSecCSDefaultFlags, NULL));
+      CFDictionaryRef info = NULL; status = SecCodeCopySigningInformation(code, kSecCSSigningInformation, &info);
+      record[@"processSigningStatus"] = @((int)status);
+      if (status == errSecSuccess) {
+        NSData *hash = ((__bridge NSDictionary *)info)[(__bridge NSString *)kSecCodeInfoUnique];
+        if ([hash isKindOfClass:NSData.class] && hash.length == 20) {
+          NSMutableString *value = [NSMutableString stringWithString:@"cdhash:"];
+          for (NSUInteger index = 0; index < hash.length; index++) [value appendFormat:@"%02x", ((const unsigned char *)hash.bytes)[index]];
+          record[@"processCode"] = value;
+        }
+        CFRelease(info);
+      }
+      CFRelease(code);
+    }
+  }
+  CFRelease(fixture);
+  NSData *json = [NSJSONSerialization dataWithJSONObject:record options:0 error:nil];
+  fixtureRequire(json && json.length < 16384, @"Bounded read-only code and ACL observations required");
+  printf("%s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
+}
+
 int main(int argc, const char *argv[]) { @autoreleasepool {
   @try {
     NSDictionary *env = NSProcessInfo.processInfo.environment;
     fixtureRequire([env[@"GITHUB_ACTIONS"] isEqual:@"true"] && [env[@"RUNNER_OS"] isEqual:@"macOS"] && [env[@"GITHUB_REPOSITORY"] isEqual:@"surfacedby/OpenGEO"], @"This fixture is restricted to disposable OpenGEO GitHub Mac runners");
-    fixtureRequire(argc == 3 || argc == 5, @"Expected setup directory old-app new-app, or cleanup directory");
+    fixtureRequire(argc == 3 || argc == 5 || argc == 6, @"Expected setup/inspect directory old-app new-app [pid], or cleanup directory");
     NSString *mode = @(argv[1]), *directory = [@(argv[2]) stringByResolvingSymlinksInPath];
     NSString *temporary = [env[@"RUNNER_TEMP"] stringByResolvingSymlinksInPath];
     fixtureRequire([directory hasPrefix:[temporary stringByAppendingString:@"/"]] && [[directory lastPathComponent] hasPrefix:@"release-macos-"], @"Fixture directory must be an owned release directory");
     NSString *stateFile = [directory stringByAppendingPathComponent:@"keychain-state.json"];
+    if ([mode isEqual:@"inspect"]) {
+      fixtureRequire(argc == 5 || argc == 6, @"Read-only inspection requires the reviewed app paths");
+      NSDictionary *state = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:stateFile] options:0 error:nil];
+      fixtureRequire([state[@"ownerDirectory"] isEqual:directory], @"Fixture observation scope changed");
+      inspectFixture(state, argv[3], argv[4], argc == 6 ? argv[5] : NULL);
+      return 0;
+    }
     if ([mode isEqual:@"cleanup"]) {
       NSDictionary *state = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:stateFile] options:0 error:nil];
       fixtureRequire([state[@"ownerDirectory"] isEqual:directory], @"Fixture cleanup scope changed");

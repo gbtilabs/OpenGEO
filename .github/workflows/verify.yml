@@ -50,5 +50,8 @@ jobs:
       - run: npm run check:public
       - run: npm test
       - run: python tests/release_files_test.py
+      - name: Prove actual Electron encryption across a copied bundle upgrade
+        if: runner.os == 'macOS'
+        run: python3 tests/mac_electron_keychain_test.py
       - run: node scripts/clean-build.mjs
       - run: npm run audit:deps
