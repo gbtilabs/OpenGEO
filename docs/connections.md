@@ -39,7 +39,7 @@ SurfacedBy is optional. You can keep using local projects and exports without a 
 
 OpenGEO checks the connected server's capabilities before offering managed work. Supported checks show a credit preview or quote for review. Selected-question checks collect answers for the approved list without automatically purchasing analysis. Suggestions and drafts require a separate price review when available.
 
-**Managed features are experimental in this beta.** The desktop release does not certify live supplier quality, billing and refund recovery, worker activation, usage delivery or historical imports. Availability depends on the connected service; see the [beta notes](releases/v0.1.0-beta.1.md).
+**Managed features are experimental in this beta.** The desktop release does not certify live supplier quality, billing and refund recovery, worker activation, usage delivery or historical imports. Availability depends on the connected service; see the [beta notes](releases/v0.1.0-beta.2.md).
 
 ## Spending, pauses and cancellation
 
