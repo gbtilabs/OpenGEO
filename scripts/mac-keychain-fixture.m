@@ -26,9 +26,12 @@ static NSArray *itemPartitions(SecKeychainItemRef item) {
   fixtureStatus(SecKeychainItemCopyAccess(item, &access), @"Read actual partition metadata");
   fixtureStatus(SecAccessCopyACLList(access, &acls), @"Enumerate actual item ACLs");
   NSArray *result = nil;
+  NSMutableArray *observations = [NSMutableArray array];
   for (id object in (__bridge NSArray *)acls) {
     CFArrayRef clients = NULL; CFStringRef description = NULL; SecKeychainPromptSelector selector;
     OSStatus status = SecACLCopyContents((__bridge SecACLRef)object, &clients, &description, &selector);
+    CFArrayRef authorizations = SecACLCopyAuthorizations((__bridge SecACLRef)object);
+    NSMutableDictionary *observation = [@{@"contentsStatus":@((int)status), @"authorizations":(__bridge NSArray *)authorizations ?: @[], @"descriptionLength":@(description ? CFStringGetLength(description) : 0)} mutableCopy];
     if (status == errSecSuccess && description) {
       NSString *hex = (__bridge NSString *)description;
       if (hex.length && hex.length % 2 == 0 && [hex rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdefABCDEF"] invertedSet]].location == NSNotFound) {
@@ -38,14 +41,21 @@ static NSArray *itemPartitions(SecKeychainItemRef item) {
           ((unsigned char *)bytes.mutableBytes)[index / 2] = (unsigned char)strtoul(pair, NULL, 16);
         }
         id plist = [NSPropertyListSerialization propertyListWithData:bytes options:NSPropertyListImmutable format:NULL error:nil];
+        observation[@"decodedPropertyList"] = @([plist isKindOfClass:NSDictionary.class]);
         if ([plist isKindOfClass:NSDictionary.class] && plist[@"Partitions"]) {
           fixtureRequire(result == nil && [plist[@"Partitions"] isKindOfClass:NSArray.class], @"Unexpected or duplicate partition metadata");
           result = plist[@"Partitions"];
         }
       }
     }
+    [observations addObject:observation];
+    if (authorizations) CFRelease(authorizations);
     if (clients) CFRelease(clients); if (description) CFRelease(description);
   }
+  // Only public ACL metadata is emitted. Passwords and item data are never read.
+  NSData *diagnostic = [NSJSONSerialization dataWithJSONObject:@{@"aclMetadata":observations, @"partitions":result ?: @[]} options:0 error:nil];
+  fixtureRequire(diagnostic && diagnostic.length < 16384, @"Bounded synthetic ACL metadata required");
+  fprintf(stderr, "Fixture ACL metadata: %s\n", [[NSString alloc] initWithData:diagnostic encoding:NSUTF8StringEncoding].UTF8String);
   CFRelease(acls); CFRelease(access); return result ?: @[];
 }
 
