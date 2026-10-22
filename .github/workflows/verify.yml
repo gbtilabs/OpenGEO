@@ -35,5 +35,8 @@ jobs:
       - name: Compile the isolated Mac Keychain test controller
         if: runner.os == 'macOS'
         run: clang -fobjc-arc -framework Foundation -framework Security scripts/mac-keychain-fixture.m -o "$RUNNER_TEMP/opengeo-keychain-fixture"
+      - name: Prove both scoped Keychain clients and deny an unlisted program
+        if: runner.os == 'macOS'
+        run: python tests/mac_keychain_fixture_test.py
       - run: node scripts/clean-build.mjs
       - run: npm run audit:deps
