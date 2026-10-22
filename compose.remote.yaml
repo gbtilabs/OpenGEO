@@ -1,0 +1,11 @@
+# Opt in with: docker compose -f compose.yaml -f compose.remote.yaml up --build -d
+services:
+  opengeo:
+    environment:
+      OPENGEO_REMOTE_ORIGIN: "${OPENGEO_REMOTE_ORIGIN:?Set the exact HTTPS Tailscale Serve origin}"
+      OPENGEO_REMOTE_KEY_FILE: /run/secrets/opengeo_remote_key
+    secrets:
+      - opengeo_remote_key
+secrets:
+  opengeo_remote_key:
+    file: .local/remote-access-key

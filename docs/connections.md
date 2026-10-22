@@ -19,7 +19,7 @@ OpenGEO implements the [published subscription-sharing protocol](https://develop
 
 Checks collect Responses API answers. These can differ from the answers in the ChatGPT website or app. Web search depends on the selected model and account permissions. OpenGEO records whether a search was requested and whether the response confirms it ran.
 
-When self-hosting, the sign-in browser must be able to reach the callback on the host running OpenGEO. Use a [local port forward](distribution.md#remote-access) or another documented local connection; do not expose an unprotected backend to make sign-in work.
+When self-hosting in local mode, use a [local port forward](distribution.md#remote-access) so the sign-in browser can reach the callback on the OpenGEO host. Optional [private-network mode](remote-access.md#connect-ai-services) also supports pasting the exact one-time loopback redirect URL into the authenticated workspace. Do not expose an unprotected backend or share that URL to make sign-in work.
 
 ## OpenRouter
 

@@ -5,6 +5,7 @@ import { Store } from "./storage.js";
 import { Vault, type SecretProtector } from "./vault.js";
 import { createApp } from "./app.js";
 import { lockRuntime } from "./runtime-lock.js";
+import { remoteConfig } from "./remote-access.js";
 export async function start(
   options: {
     directory?: string;
@@ -14,6 +15,8 @@ export async function start(
     onConnected?: () => void;
   } = {},
 ) {
+  const remote = remoteConfig();
+  if (remote && options.protector) throw new Error("Remote access is supported by the standalone server, not the desktop application");
   const directory = resolve(
     options.directory ?? process.env.OPENGEO_DATA_DIR ?? ".local",
   );
@@ -34,7 +37,7 @@ export async function start(
   }
   let result: Awaited<ReturnType<typeof createApp>>;
   try {
-    result = await createApp(store, vault, undefined, options.staticRoot, options.onConnected);
+    result = await createApp(store, vault, undefined, options.staticRoot, options.onConnected, remote);
   } catch (error) {
     store.close();
     unlock();

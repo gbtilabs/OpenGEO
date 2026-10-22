@@ -26,5 +26,5 @@ COPY LICENSE THIRD_PARTY_NOTICES.md ./
 USER node
 VOLUME /data
 EXPOSE 4318
-HEALTHCHECK --interval=30s CMD node -e "fetch('http://127.0.0.1:'+(process.env.OPENGEO_PORT??4318)+'/api/session').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s CMD node -e "fetch('http://127.0.0.1:'+(process.env.OPENGEO_PORT??4318)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node","dist-server/main.js"]

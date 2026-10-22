@@ -76,7 +76,9 @@ Keep the Docker data volume and encryption secret when updating. Source and Dock
 
 ## Remote access
 
-OpenGEO is a single-user local workspace without a separate user login. Keep the application and sign-in ports bound to loopback on the server, then forward them over an authenticated SSH connection. The SSH host can be reached through Tailscale or WireGuard if your account and network rules permit it.
+For direct HTTPS access over Tailscale, follow the [private-network setup guide](remote-access.md). This optional source/Docker mode requires a workspace access key. The existing desktop downloads retain local mode.
+
+For local mode, keep the application and sign-in ports bound to loopback on the server, then forward them over an authenticated SSH connection. The SSH host can be reached through Tailscale or WireGuard if your account and network rules permit it.
 
 The backend checks for loopback `Host` headers, but a header check is not access control. A proxy that rewrites headers does not add authentication. Keep the request checks enabled and use explicit loopback bindings at both ends:
 
@@ -90,7 +92,7 @@ The application forward can use another free local port. For example, `-L 127.0.
 
 The sign-in forward is different. Keep its local port equal to `OPENGEO_OAUTH_PORT`, because sign-in sends the browser to that exact loopback address.
 
-The SSH connection controls access to the server-side forwarding. Anyone who can reach your local forwarded port can still use the workspace and connected providers, including other users on that computer. The OpenGEO session cookie is not a separate login. Direct network-hostname and reverse-proxy deployments are not supported; see the [security model](../SECURITY.md#local-access-is-the-trust-boundary).
+The SSH connection controls access to the server-side forwarding. Anyone who can reach your local forwarded port can still use the local-mode workspace and connected providers, including other users on that computer. The local session cookie is not a separate login. Direct network-hostname access requires the separately configured [remote mode](remote-access.md); see the [security model](../SECURITY.md#local-access-is-the-trust-boundary).
 
 ## Build or contribute
 

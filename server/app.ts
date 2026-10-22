@@ -34,6 +34,7 @@ import {
 } from "./analysis.js";
 import { exportProject, reportMarkdown } from "./export.js";
 import { htmlDocument } from "./markdown.js";
+import { RemoteAccess, securityHeaders, type RemoteConfig } from "./remote-access.js";
 import {
   previewImport,
   importProject,
@@ -46,8 +47,10 @@ export async function createApp(
   token = randomBytes(32).toString("base64url"),
   staticRoot = resolve("dist"),
   onConnected?: () => void,
+  remoteOptions?: RemoteConfig,
 ) {
   const app = Fastify({ logger: false, bodyLimit: 20_000_000 });
+  const remote = remoteOptions ? new RemoteAccess(remoteOptions, token) : undefined;
   const sessionCookie = "opengeo_session_" + createHash("sha256").update(token).digest("hex").slice(0, 16);
   const siteIcons = new SiteIcons(undefined, () => store.setting('cachedWebsiteIcons', true));
   const usage = new UsageSharing(store);
@@ -62,6 +65,8 @@ export async function createApp(
     scheduler = new Scheduler(store);
   const permittedHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
   app.addHook("onRequest", async (req, res) => {
+    securityHeaders(res);
+    if (remote) return remote.guard(req, res);
     const host = req.headers.host;
     let hostname: string;
     try {
@@ -91,12 +96,6 @@ export async function createApp(
       req.headers["sec-fetch-mode"] === "navigate" && req.headers["sec-fetch-dest"] === "document";
     if (req.headers["sec-fetch-site"] === "cross-site" && !topLevelPage)
       return res.code(403).send({ error: "Cross-site request refused" });
-    res.header(
-      "Content-Security-Policy",
-      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-    );
-    res.header("X-Content-Type-Options", "nosniff");
-    res.header("Referrer-Policy", "no-referrer");
     if (req.url.startsWith("/api/")) res.header("Cache-Control", "no-store");
     if (!req.url.startsWith("/api/") || req.url === "/api/session") return;
     const cookie = String(req.headers.cookie ?? "")
@@ -111,6 +110,9 @@ export async function createApp(
     if (a.length !== b.length || !timingSafeEqual(a, b))
       return res.code(401).send({ error: "Local session required" });
   });
+  remote?.register(app);
+  app.get("/healthz", () => ({ status: "ok" }));
+  app.get("/api/access", () => ({ remote: Boolean(remote) }));
   app.setErrorHandler((error, req, res) => {
     if (error instanceof z.ZodError)
       return res.code(422).send({
@@ -135,6 +137,7 @@ export async function createApp(
   });
   app.get("/api/session", async (_, res) => {
     usage.record("workspace_opened", null, true);
+    if (remote) return { product: identity.name, remote: true };
     res.header(
       "Set-Cookie",
       sessionCookie + "=" + token + "; HttpOnly; SameSite=Strict; Path=/",
@@ -457,7 +460,13 @@ export async function createApp(
         headless: z.boolean().optional(),
       })
       .parse(req.body ?? {});
-    return connections.start(provider, input.profileId, input.headless);
+    return connections.start(provider, input.profileId, remote && provider === "openrouter" ? true : input.headless)
+      .then(result => ({ ...result, manualCallback: Boolean(remote) && provider === "chatgpt" }));
+  });
+  app.post("/api/connections/chatgpt/finish", async (req) => {
+    const input = z.object({ state: z.string().min(32).max(100), callback: z.string().max(8192) }).strict().parse(req.body);
+    await connections.completeCallback(input.state, input.callback);
+    return { connected: true };
   });
   app.get("/api/connections/:provider/status", (req) => {
     const provider = z.enum(["chatgpt", "openrouter"]).parse((req.params as any).provider);

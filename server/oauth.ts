@@ -205,6 +205,20 @@ export class Connections {
     if (outcome?.provider === provider && outcome.expires > Date.now()) return { status: outcome.status };
     return { status: "expired" as const };
   }
+  /** Loopback OAuth redirects land on the remote user's computer, so accept that exact URL over the authenticated workspace instead. */
+  async completeCallback(state: string, value: string) {
+    const pending = this.pending.get(state);
+    if (!pending || pending.provider !== "chatgpt" || !pending.redirect) throw new Error("Connection attempt expired");
+    const callback = new URL(value), expected = new URL(pending.redirect);
+    if (callback.origin !== expected.origin || callback.pathname !== expected.pathname || callback.username || callback.password || callback.hash ||
+        callback.searchParams.getAll("state").length !== 1 || callback.searchParams.get("state") !== state ||
+        callback.searchParams.getAll("code").length > 1 || callback.searchParams.getAll("client_id").length > 1)
+      throw new Error("Invalid callback URL");
+    try { return await this.finish(state, callback.searchParams); }
+    finally {
+      if (!this.pending.has(state)) pending.server?.close(() => { if (pending.server) this.servers.delete(pending.server); });
+    }
+  }
   async finish(state: string, params: URLSearchParams) {
     const pending = this.pending.get(state);
     if (pending && pending.expires > Date.now()) this.outcomes.set(state, { provider: pending.provider, status: "pending", expires: Date.now() + 600000 });

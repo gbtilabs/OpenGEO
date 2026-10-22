@@ -60,6 +60,7 @@ Optional usage sharing is preselected during setup. Uncheck it before finishing,
 
 - [Getting started](docs/getting-started.md): from your first audit to a recheck.
 - [Installation and self-hosting](docs/distribution.md): downloads, Docker, remote access, updates and backups.
+- [Private access over Tailscale](docs/remote-access.md): server setup, workspace sign-in and connections from another device.
 - [Connections and costs](docs/connections.md): choose a service and understand what it collects.
 - [How measurements work](docs/methodology.md): mentions, citations, missing answers and comparisons.
 - [Development](docs/development.md): run from source, use the CLI or connect MCP.

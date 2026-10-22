@@ -1,0 +1,61 @@
+name: Verify private network access
+
+on:
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: Exact reviewed source commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  remote:
+    if: github.repository == 'surfacedby/OpenGEO'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TEST_IMAGE: opengeo:remote-${{ github.run_id }}
+    steps:
+      - name: Require the reviewed workflow source
+        env:
+          REVIEWED_HEAD: ${{ inputs.head_sha }}
+          ACTUAL_HEAD: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          assert re.fullmatch(r'[0-9a-f]{40}', os.environ['REVIEWED_HEAD'])
+          assert os.environ['REVIEWED_HEAD'] == os.environ['ACTUAL_HEAD']
+          PY
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.4.1'
+          package-manager-cache: false
+      - run: npm ci
+      - run: node node_modules/playwright/cli.js install --with-deps chromium
+      - run: docker build --tag "$TEST_IMAGE" .
+      - name: Verify unchanged local Compose modes and healthcheck
+        env:
+          CONTROL_SHA: ${{ github.sha }}
+          RESULT_FILE: compose-verification.json
+        run: node scripts/compose-smoke.mjs . "$TEST_IMAGE"
+      - name: Verify remote Compose with real HTTPS and browser cookies
+        env:
+          RESULT_DIRECTORY: remote-verification
+        run: node scripts/remote-smoke.mjs "$TEST_IMAGE"
+      - name: Verify local audit, backup and restart
+        run: node scripts/docker-smoke.mjs "$TEST_IMAGE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: private-network-verification
+          path: |
+            compose-verification.json
+            remote-verification/
+          if-no-files-found: error
+          retention-days: 14

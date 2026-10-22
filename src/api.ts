@@ -7,6 +7,7 @@ let sessionRefresh: Promise<void> | undefined;
 function refreshSession(): Promise<void> {
   if (!sessionRefresh) {
     sessionRefresh = fetch("/api/session", { credentials: "same-origin" }).then(response => {
+      if (response.status === 401) throw new RequestError("Your workspace is locked. Open /login in another tab, sign in, then retry. Your unsaved work stays in this tab.");
       if (!response.ok) throw new Error("Local session could not be renewed");
       sessionGeneration++;
     }).finally(() => { sessionRefresh = undefined; });
@@ -45,7 +46,7 @@ export async function api<T = any>(
       if (generation === sessionGeneration) await refreshSession();
       response = await fetch("/api" + path, options);
     }
-  } catch { throw new Error(unavailable); }
+  } catch (error) { if (error instanceof RequestError) throw error; throw new Error(unavailable); }
   let data;
   try { data = await response.json(); } catch { throw new Error(unavailable); }
   if (!response.ok) {
