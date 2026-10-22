@@ -79,12 +79,14 @@ if suffix == '.dmg':
     # Fresh startup uses the normal runner Keychain. The upgrade's synthetic value
     # uses a separate owner-authorized Keychain because ad hoc code updates need consent.
     executable = install(candidate)
+    built_app = build / ('mac-arm64' if target.endswith('arm64') else 'mac') / 'OpenGEO.app'
+    assert inventory(built_app) == inventory(installation / 'OpenGEO.app'), 'Consent must bind the exact mounted installer code'
+    subprocess.run(['codesign', '--verify', '--deep', '--strict', str(installation / 'OpenGEO.app')], check=True, timeout=30)
     smoke(executable)
     old_executable = install(previous)
     controller = out / 'keychain-fixture'
     subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation', '-framework', 'Security', 'scripts/mac-keychain-fixture.m', '-o', str(controller)], check=True, timeout=60)
     try:
-        built_app = build / ('mac-arm64' if target.endswith('arm64') else 'mac') / 'OpenGEO.app'
         subprocess.run([str(controller), 'setup', str(out), str(installation / 'OpenGEO.app'), str(built_app)], check=True, timeout=30)
         smoke(old_executable, 'seed')
         executable = install(candidate)

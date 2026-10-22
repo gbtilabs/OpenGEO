@@ -1,8 +1,72 @@
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
+#import <Security/cssmerr.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+
+static void fixtureRequire(BOOL condition, NSString *message);
+static void fixtureStatus(OSStatus status, NSString *operation);
+
+static NSString *codePartition(NSString *path) {
+  SecStaticCodeRef code = NULL; CFDictionaryRef info = NULL;
+  fixtureStatus(SecStaticCodeCreateWithPath((__bridge CFURLRef)[NSURL fileURLWithPath:path], kSecCSDefaultFlags, &code), @"Read reviewed static code");
+  fixtureStatus(SecStaticCodeCheckValidity(code, kSecCSStrictValidate, NULL), @"Validate reviewed static code");
+  fixtureStatus(SecCodeCopySigningInformation(code, kSecCSSigningInformation, &info), @"Read reviewed code identity");
+  NSData *hash = ((__bridge NSDictionary *)info)[(__bridge NSString *)kSecCodeInfoUnique];
+  fixtureRequire([hash isKindOfClass:NSData.class] && hash.length == 20, @"Expected an actual 20-byte code directory hash");
+  NSMutableString *value = [NSMutableString stringWithString:@"cdhash:"];
+  for (NSUInteger index = 0; index < hash.length; index++) [value appendFormat:@"%02x", ((const unsigned char *)hash.bytes)[index]];
+  CFRelease(info); CFRelease(code); return value;
+}
+
+static NSArray *itemPartitions(SecKeychainItemRef item) {
+  SecAccessRef access = NULL; CFArrayRef acls = NULL;
+  fixtureStatus(SecKeychainItemCopyAccess(item, &access), @"Read actual partition metadata");
+  fixtureStatus(SecAccessCopyACLList(access, &acls), @"Enumerate actual item ACLs");
+  NSArray *result = nil;
+  for (id object in (__bridge NSArray *)acls) {
+    CFArrayRef clients = NULL; CFStringRef description = NULL; SecKeychainPromptSelector selector;
+    OSStatus status = SecACLCopyContents((__bridge SecACLRef)object, &clients, &description, &selector);
+    if (status == errSecSuccess && description) {
+      NSString *hex = (__bridge NSString *)description;
+      if (hex.length && hex.length % 2 == 0 && [hex rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdefABCDEF"] invertedSet]].location == NSNotFound) {
+        NSMutableData *bytes = [NSMutableData dataWithLength:hex.length / 2];
+        for (NSUInteger index = 0; index < hex.length; index += 2) {
+          char pair[3] = {[hex characterAtIndex:index], [hex characterAtIndex:index + 1], 0};
+          ((unsigned char *)bytes.mutableBytes)[index / 2] = (unsigned char)strtoul(pair, NULL, 16);
+        }
+        id plist = [NSPropertyListSerialization propertyListWithData:bytes options:NSPropertyListImmutable format:NULL error:nil];
+        if ([plist isKindOfClass:NSDictionary.class] && plist[@"Partitions"]) {
+          fixtureRequire(result == nil && [plist[@"Partitions"] isKindOfClass:NSArray.class], @"Unexpected or duplicate partition metadata");
+          result = plist[@"Partitions"];
+        }
+      }
+    }
+    if (clients) CFRelease(clients); if (description) CFRelease(description);
+  }
+  CFRelease(acls); CFRelease(access); return result ?: @[];
+}
+
+static void authorizePartitions(SecKeychainItemRef item, NSString *path, NSData *password, NSArray *partitions) {
+  fixtureRequire([NSSet setWithArray:partitions].count == 2, @"Authorize exactly two distinct reviewed code hashes");
+  // Keychain partition validation is separate from the legacy trusted-client ACL.
+  // Supply this disposable keychain owner's consent to the system tool without
+  // putting its random password in process arguments, the environment or a file.
+  fixtureRequire([path rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./-"] invertedSet]].location == NSNotFound, @"Unexpected fixture command path");
+  NSString *command = [NSString stringWithFormat:@"set-generic-password-partition-list -a OpenGEO -s \"OpenGEO Safe Storage\" -S %@ -k %@ %@\n", [partitions componentsJoinedByString:@","], [[NSString alloc] initWithData:password encoding:NSUTF8StringEncoding], path];
+  NSTask *task = [NSTask new]; NSPipe *input = [NSPipe pipe], *output = [NSPipe pipe];
+  task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/security"]; task.arguments = @[@"-i", @"-q"];
+  NSMutableDictionary *environment = [NSMutableDictionary dictionary];
+  for (NSString *name in @[@"PATH", @"HOME", @"TMPDIR", @"USER", @"LOGNAME"]) if (NSProcessInfo.processInfo.environment[name]) environment[name] = NSProcessInfo.processInfo.environment[name];
+  task.environment = environment; task.standardInput = input; task.standardOutput = output; task.standardError = output;
+  fixtureRequire([task launchAndReturnError:nil], @"Launch scoped system consent tool");
+  [input.fileHandleForWriting writeData:[command dataUsingEncoding:NSUTF8StringEncoding]]; [input.fileHandleForWriting closeFile];
+  NSData *diagnostic = [output.fileHandleForReading readDataToEndOfFile]; [task waitUntilExit];
+  fixtureRequire(task.terminationStatus == 0 && diagnostic.length < 65536 && [diagnostic rangeOfData:password options:0 range:NSMakeRange(0, diagnostic.length)].location == NSNotFound, @"Scoped fixture consent failed; no diagnostic secrets are retained");
+  fixtureRequire([[NSSet setWithArray:itemPartitions(item)] isEqual:[NSSet setWithArray:partitions]], @"Actual partition list must contain only the two reviewed builds");
+}
 
 static void fixtureRequire(BOOL condition, NSString *message) {
   if (!condition) @throw [NSException exceptionWithName:@"FixtureRefusal" reason:message userInfo:nil];
@@ -82,6 +146,8 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
       SecKeychainAttribute attributes[] = {{kSecServiceItemAttr, (UInt32)strlen(service), (void *)service}, {kSecAccountItemAttr, (UInt32)strlen(account), (void *)account}};
       SecKeychainAttributeList attributesList = {2, attributes}; SecKeychainItemRef item = NULL;
       fixtureStatus(SecKeychainItemCreateFromContent(kSecGenericPasswordItemClass, &attributesList, (UInt32)secret.length, secret.bytes, fixture, access, &item), @"Create synthetic OS storage item");
+      NSArray *partitionsBefore = itemPartitions(item), *partitions = @[codePartition(@(argv[3])), codePartition(@(argv[4]))];
+      authorizePartitions(item, path, password, partitions);
       SecAccessRef actual = NULL; fixtureStatus(SecKeychainItemCopyAccess(item, &actual), @"Read actual item access");
       CFArrayRef acls = SecAccessCopyMatchingACLList(actual, kSecACLAuthorizationDecrypt);
       fixtureRequire(acls && CFArrayGetCount(acls) == 1, @"Expected one decrypt ACL");
@@ -97,6 +163,12 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
       }
       fixtureRequire(expectedPrograms.count == 2 && [expectedPrograms isEqual:observedPrograms], @"Trusted application identities changed");
       CFRelease(applications); if (description) CFRelease(description); CFRelease(acls); CFRelease(actual); CFRelease(item); CFRelease(access);
+      fixtureStatus(SecKeychainSetUserInteractionAllowed(false), @"Disable UI only for this fixture controller's negative check");
+      UInt32 deniedLength = 0; void *deniedBytes = NULL;
+      OSStatus denied = SecKeychainFindGenericPassword(fixture, (UInt32)strlen(service), service, (UInt32)strlen(account), account, &deniedLength, &deniedBytes, NULL);
+      if (deniedBytes) SecKeychainItemFreeContent(NULL, deniedBytes);
+      fixtureRequire(denied == errSecAuthFailed || denied == errSecInteractionNotAllowed || denied == CSSMERR_CSP_OPERATION_AUTH_DENIED, @"An unlisted program must be refused, not merely miss the item");
+      fixtureStatus(SecKeychainSetUserInteractionAllowed(true), @"Restore fixture controller interaction");
       fixtureStatus(SecKeychainSetDefault(fixture), @"Select owned fixture default");
       // The combined API also returns system and dynamic keychains, which are
       // outside this fixture's authority. Replace and verify only the user list.
@@ -104,6 +176,7 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
       fixtureRequire([searchPaths(kSecPreferencesDomainUser) isEqual:@[path]], @"Fixture user search list differs");
       fixtureRequire([searchPaths(kSecPreferencesDomainSystem) isEqual:state[@"systemSearch"]] && [searchPaths(kSecPreferencesDomainDynamic) isEqual:state[@"dynamicSearch"]], @"System or dynamic keychains changed");
       writeJSON(@{@"syntheticItemOnly":@YES, @"trustedDecryptClients":@2, @"explicitFixtureOwnerConsent":@YES, @"realLoginKeychainUntouched":@YES,
+        @"partitionCodeIdentities":partitions, @"partitionMetadataBefore":partitionsBefore, @"unlistedClientDenied":@YES,
         @"scope":@"Preauthorization of exact old and new code identities in one disposable keychain; not an automated system-dialog test"}, [directory stringByAppendingPathComponent:@"keychain-consent.json"]);
       CFRelease(fixture);
     } @catch (NSException *error) { restore(state); @throw error; }

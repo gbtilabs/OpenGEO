@@ -107,7 +107,11 @@ necessary audit evidence. Existing public release assets remain immutable.
 
 Mac fresh startup uses the runner's normal Keychain. The encrypted upgrade check
 uses one disposable Keychain containing a synthetic item whose decrypt ACL names
-only the exact old and new code identities. This represents explicit fixture-owner
+only the exact old and new code identities. The independent partition list also
+contains exactly those two code hashes; an unlisted program must be refused.
+The system consent tool receives the disposable keychain password through a
+private pipe, never a process argument, environment variable or saved file.
+This represents explicit fixture-owner
 consent; it does not automate or bypass the macOS password dialog. The original
 default and user search list are restored, system and dynamic lists are preserved,
 and the disposable Keychain is removed even
