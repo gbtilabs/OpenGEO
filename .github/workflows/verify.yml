@@ -33,6 +33,9 @@ jobs:
       - run: npm run check:public
       - run: npm test
       - run: python tests/release_files_test.py
+      - name: Compile the isolated Mac Keychain test controller
+        if: runner.os == 'macOS'
+        run: clang -fobjc-arc -framework Foundation -framework Security scripts/mac-keychain-fixture.m -o "$RUNNER_TEMP/opengeo-keychain-fixture"
       - run: node scripts/clean-build.mjs
       - run: npm run audit:deps
 

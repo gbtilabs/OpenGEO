@@ -48,6 +48,11 @@ def audit():
     record = json.loads((unpacked / 'candidate.json').read_text())
     assert record['source'] == source and record['runId'] == run and record['target'] == target
     assert record['freshInstalledWorkflow'] and record['upgradeWorkspaceAndOsEncryptedStorage'] and record['removedOwnedInstallation']
+    if target.startswith('macos'):
+        consent = record['macUpgradeExplicitKeychainConsent']
+        assert consent['trustedDecryptClients'] == 2 and consent['explicitFixtureOwnerConsent']
+        assert consent['originalDefaultAndSearchRestored'] and consent['ownedKeychainRemoved']
+        assert consent['fixtureSourceSha256'] == digest('scripts/mac-keychain-fixture.m')
     installer = unpacked / record['installer']['name']
     assert digest(installer) == record['installer']['sha256'] and installer.stat().st_size == record['installer']['bytes']
     payload = unpacked / 'payload'
@@ -159,6 +164,7 @@ def publish():
                 'buildOrigin': 'GitHub hosted native runners', 'candidateRun': run,
                 'cryptographicBuildAttestation': False, 'windowsAuthenticodeSigned': False,
                 'macAdHocSealVerified': True, 'macDeveloperIdSigned': False, 'macNotarized': False,
+                'macUpgradeRequiresKeychainApproval': True,
                 'cleanMachineCertification': False, 'manualUpdates': True,
                 'verification': {'applicationRun': approval['applicationRun'], 'remoteRun': approval['remoteRun'],
                                  'freshInstallAndBeta1Upgrade': TARGETS, 'docker': ['linux-amd64', 'linux-arm64'],

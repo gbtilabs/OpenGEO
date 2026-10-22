@@ -1,5 +1,5 @@
 import { _electron as electron } from "playwright";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import identity from "../brand/identity.json" with { type: "json" };
@@ -8,6 +8,8 @@ const option = name => { const at = args.indexOf(name); return at < 0 ? undefine
 const externalProfile = option("--profile"), phase = option("--phase"), receipt = option("--receipt");
 if (externalProfile && (!receipt || !["seed", "verify"].includes(phase))) throw new Error("Upgrade checks require a phase and receipt");
 const directory = externalProfile ? resolve(externalProfile) : mkdtempSync(join(tmpdir(), "opengeo-desktop-test-"));
+if (phase === 'seed' && (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory() || readdirSync(directory).length))
+  throw new Error('Upgrade seeding requires an empty, regular test directory');
 const systemNames = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'SYSTEMDRIVE', 'NUMBER_OF_PROCESSORS', 'SHELL', 'USER', 'LOGNAME', 'DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']);
 const root = process.argv[2] === "--verification" ? "release/verification" : "release";
 const defaultExecutable = process.platform === "darwin"
@@ -110,13 +112,15 @@ try {
 } finally {
   await application?.close();
   try {
-    if (dirname(resolve(directory)) !== resolve(tmpdir())) throw new Error("Desktop profile cleanup escaped its temporary directory");
-    if (!externalProfile) rmSync(directory, {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 300,
-    });
+    if (!externalProfile) {
+      if (dirname(resolve(directory)) !== resolve(tmpdir())) throw new Error("Desktop profile cleanup escaped its temporary directory");
+      rmSync(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 300,
+      });
+    }
   } catch {
     console.error("Temporary desktop profile remains locked: " + directory);
   }

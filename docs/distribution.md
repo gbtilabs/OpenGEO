@@ -52,6 +52,14 @@ An ad hoc signature detects changes to the sealed app; it does not verify the pu
 
 There is no automatic updater in this beta. Export a backup in Settings before installing a future version. Quit OpenGEO before updating; closing the window leaves it running in the tray. Cross-version migration still needs verification for each future release.
 
+On a Mac, an update can show a macOS dialog saying **OpenGEO wants to use your
+confidential information stored in "OpenGEO Safe Storage" in your keychain**.
+Ad hoc signed updates need your approval to read the existing encrypted connections.
+Check the official download and its checksum, then enter your login Keychain
+password in that **macOS system dialog** and choose **Always Allow** for the updated
+app. Never enter that password in OpenGEO's interface or a website. Dismissing the
+dialog can leave startup waiting; reopen the app when you are ready to approve it.
+
 | System | Workspace location | Remove the application |
 | --- | --- | --- |
 | Windows | `%APPDATA%\OpenGEO` | Settings > Apps > Installed apps > OpenGEO |

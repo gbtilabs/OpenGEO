@@ -74,11 +74,35 @@ def smoke(executable, phase=None):
         raise RuntimeError('Installed workflow failed at phase ' + str(phase))
 
 
-old_executable = install(previous)
-smoke(old_executable, 'seed')
-executable = install(candidate)
-smoke(executable, 'verify')
-smoke(executable)
+keychain_consent = None
+if suffix == '.dmg':
+    # Fresh startup uses the normal runner Keychain. The upgrade's synthetic value
+    # uses a separate owner-authorized Keychain because ad hoc code updates need consent.
+    executable = install(candidate)
+    smoke(executable)
+    old_executable = install(previous)
+    controller = out / 'keychain-fixture'
+    subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation', '-framework', 'Security', 'scripts/mac-keychain-fixture.m', '-o', str(controller)], check=True, timeout=60)
+    try:
+        built_app = build / ('mac-arm64' if target.endswith('arm64') else 'mac') / 'OpenGEO.app'
+        subprocess.run([str(controller), 'setup', str(out), str(installation / 'OpenGEO.app'), str(built_app)], check=True, timeout=30)
+        smoke(old_executable, 'seed')
+        executable = install(candidate)
+        smoke(executable, 'verify')
+    finally:
+        if (out / 'keychain-state.json').exists():
+            subprocess.run([str(controller), 'cleanup', str(out)], check=True, timeout=30)
+    keychain_consent = json.loads((out / 'keychain-consent.json').read_text())
+    cleanup = json.loads((out / 'keychain-cleanup.json').read_text())
+    assert cleanup['originalDefaultAndSearchRestored'] and cleanup['ownedKeychainRemoved']
+    keychain_consent.update(cleanup)
+    keychain_consent['fixtureSourceSha256'] = digest(root / 'scripts/mac-keychain-fixture.m')
+else:
+    old_executable = install(previous)
+    smoke(old_executable, 'seed')
+    executable = install(candidate)
+    smoke(executable, 'verify')
+    smoke(executable)
 if suffix == '.exe':
     built = build / 'win-unpacked'
     actual = inventory(installation)
@@ -89,7 +113,7 @@ if suffix == '.exe':
     signature_script = out / 'signature.ps1'
     signature_result = out / 'signature.json'
     signature_script.write_text('param([string]$Installer,[string]$Output)\n$ErrorActionPreference="Stop"\n@{status=[string](Get-AuthenticodeSignature -LiteralPath $Installer).Status} | ConvertTo-Json -Compress | Set-Content -LiteralPath $Output -Encoding utf8\n')
-    result = subprocess.run(['powershell', '-NoProfile', '-File', str(signature_script), '-Installer', str(candidate), '-Output', str(signature_result)], capture_output=True, check=True)
+    result = subprocess.run(['pwsh', '-NoProfile', '-File', str(signature_script), '-Installer', str(candidate), '-Output', str(signature_result)], capture_output=True, check=True)
     (out / 'signature.stdout').write_bytes(result.stdout)
     (out / 'signature.stderr').write_bytes(result.stderr)
     actual_signature = json.loads(signature_result.read_text(encoding='utf-8-sig'))
@@ -118,6 +142,7 @@ record = {'source': source, 'runId': os.environ['GITHUB_RUN_ID'], 'target': targ
           'installer': {'name': name, 'bytes': candidate.stat().st_size, 'sha256': digest(candidate)},
           'payload': inventory(payload), 'previousInstallerSha256': old_hash,
           'freshInstalledWorkflow': True, 'upgradeWorkspaceAndOsEncryptedStorage': True,
+          'macUpgradeExplicitKeychainConsent': keychain_consent,
           'removedOwnedInstallation': True, 'signatures': signatures,
           'cleanMachineCertification': False, 'publicationApproved': False}
 (out / 'candidate.json').write_text(json.dumps(record, indent=2))

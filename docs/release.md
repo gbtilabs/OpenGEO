@@ -96,3 +96,12 @@ that commit. Draft review assets must never be published.
 
 Delete the temporary matching secret and private review draft after retaining the
 necessary audit evidence. Existing public release assets remain immutable.
+
+Mac fresh startup uses the runner's normal Keychain. The encrypted upgrade check
+uses one disposable Keychain containing a synthetic item whose decrypt ACL names
+only the exact old and new code identities. This represents explicit fixture-owner
+consent; it does not automate or bypass the macOS password dialog. The original
+default and search list are restored and the disposable Keychain is removed even
+after a failed check. No existing Keychain item, TCC setting, publisher identity or
+application credential protection is changed. Record that scope in the package
+receipt and disclose the end-user Keychain approval in the update guide.
