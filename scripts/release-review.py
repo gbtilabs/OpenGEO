@@ -15,15 +15,46 @@ import urllib.request
 from release_files import api, digest, download_asset, extract_bundle, git, inventory, review_release, upload, verify_bundle_inventory
 
 TARGETS = ['windows-x64', 'macos-arm64', 'macos-x64']
-source = os.environ['REVIEW_SOURCE']
+source = os.environ.get('REVIEW_SOURCE', '')
 run = os.environ.get('CANDIDATE_RUN', '')
-phase = sys.argv[1]
+phase = sys.argv[1] if len(sys.argv) > 1 else ''
+
+
+def publication_tree(source_commit):
+    """Allow publisher repairs without rebuilding or relabeling verified application bytes."""
+    head = git('rev-parse', 'HEAD')
+    assert not git('status', '--porcelain=v1')
+    assert api('repos/surfacedby/OpenGEO/git/ref/heads/master')['object']['sha'] == head
+    subprocess.run(['git', 'merge-base', '--is-ancestor', source_commit, head], check=True)
+    tooling = {'.github/workflows/release.yml', 'scripts/release-review.py',
+               'scripts/inspect_release_metadata.py', 'tests/package_inspection_test.py',
+               'tests/release_publication_test.py'}
+    assert set(git('diff', '--name-only', source_commit, head).splitlines()) <= tooling, 'Application source changed after qualification'
+    return head
+
+
+def release_for_tag(tag):
+    """Drafts require release listing/ID; the tag endpoint only returns published releases."""
+    matches, page = [], 1
+    while True:
+        rows = api('repos/surfacedby/OpenGEO/releases?per_page=100&page=' + str(page))
+        matches.extend(row for row in rows if row['tag_name'] == tag)
+        if len(rows) < 100:
+            break
+        page += 1
+    assert len(matches) == 1, 'Release tag must identify exactly one release'
+    release = api('repos/surfacedby/OpenGEO/releases/' + str(matches[0]['id']))
+    assert release['tag_name'] == tag and release['id'] == matches[0]['id']
+    return release
 
 
 def scope():
     assert re.fullmatch('[0-9a-f]{40}', source) and re.fullmatch('[0-9]+', os.environ['REVIEW_RELEASE'])
-    assert source == git('rev-parse', 'HEAD') and not git('status', '--porcelain=v1')
-    assert api('repos/surfacedby/OpenGEO/git/ref/heads/master')['object']['sha'] == source
+    if phase == 'publish':
+        publication_tree(source)
+    else:
+        assert source == git('rev-parse', 'HEAD') and not git('status', '--porcelain=v1')
+        assert api('repos/surfacedby/OpenGEO/git/ref/heads/master')['object']['sha'] == source
     review_release()
     if phase != 'scope':
         assert re.fullmatch('[0-9]+', run)
@@ -186,10 +217,10 @@ def publish():
         verified = api('repos/surfacedby/OpenGEO/actions/runs/' + str(approval[name]))
         assert verified['head_sha'] == source and verified['conclusion'] == 'success'
         assert verified['path'] == ('.github/workflows/verify.yml' if name == 'applicationRun' else '.github/workflows/verify-remote-access.yml')
-    version = json.loads(Path('package.json').read_text())['version']
+    version = json.loads(git('show', source + ':package.json'))['version']
     assert re.fullmatch(r'\d+\.\d+\.\d+-beta\.\d+', version)
     tag = 'v' + version
-    public = api('repos/surfacedby/OpenGEO/releases/tags/' + tag)
+    public = release_for_tag(tag)
     assert public['draft'] and public['prerelease'] and public['target_commitish'] == source and not public['assets']
     published = []
     for target in TARGETS:
@@ -222,6 +253,7 @@ def publish():
     subprocess.run(['git', 'archive', '--format=zip', '--prefix=OpenGEO-' + version + '/', '--output=' + str(archive), source], check=True)
     published.append({'name': archive.name, 'bytes': archive.stat().st_size, 'sha256': digest(archive)})
     manifest = {'schemaVersion': 1, 'version': version, 'sourceCommit': source, 'artifacts': published,
+                'publicationToolCommit': git('rev-parse', 'HEAD'),
                 'buildOrigin': 'GitHub hosted native runners', 'candidateRun': run,
                 'cryptographicBuildAttestation': False, 'windowsAuthenticodeSigned': False,
                 'macAdHocSealVerified': True, 'macDeveloperIdSigned': False, 'macNotarized': False,
@@ -236,15 +268,17 @@ def publish():
     sums = out / 'SHA256SUMS.txt'
     sums.write_text(''.join(row['sha256'] + '  ' + row['name'] + '\n' for row in published) + digest(manifest_file) + '  release-manifest.json\n')
     subprocess.run(['gh', 'release', 'upload', tag, str(archive), str(manifest_file), str(sums), '--repo', 'surfacedby/OpenGEO'], check=True)
-    release = api('repos/surfacedby/OpenGEO/releases/tags/' + tag)
+    release = api('repos/surfacedby/OpenGEO/releases/' + str(public['id']))
     expected = {row['name']: (row['bytes'], row['sha256']) for row in published}
     for file in [manifest_file, sums]:
         expected[file.name] = (file.stat().st_size, digest(file))
     assert set(row['name'] for row in release['assets']) == set(expected)
     assert all((row['size'], row['digest']) == (expected[row['name']][0], 'sha256:' + expected[row['name']][1]) for row in release['assets'])
     subprocess.run(['gh', 'release', 'edit', tag, '--draft=false', '--prerelease', '--repo', 'surfacedby/OpenGEO'], check=True)
+    release = api('repos/surfacedby/OpenGEO/releases/' + str(public['id']))
+    assert release['tag_name'] == tag and not release['draft'] and release['target_commitish'] == source
     downloaded = []
-    for asset in api('repos/surfacedby/OpenGEO/releases/tags/' + tag)['assets']:
+    for asset in release['assets']:
         # urllib receives no GitHub credentials. This is a complete anonymous download.
         destination = out / ('download-' + asset['name'])
         with urllib.request.urlopen(asset['browser_download_url'], timeout=60) as response, destination.open('xb') as stream:
@@ -253,15 +287,16 @@ def publish():
         downloaded.append({'name': asset['name'], 'bytes': destination.stat().st_size, 'sha256': digest(destination)})
         destination.unlink()
     receipt = out / ('public-download-verification-' + run + '.json')
-    receipt.write_text(json.dumps({'source': source, 'tag': tag, 'publicationRun': os.environ['GITHUB_RUN_ID'], 'anonymousFullDownloads': downloaded}, indent=2))
+    receipt.write_text(json.dumps({'source': source, 'publicationToolCommit': git('rev-parse', 'HEAD'), 'tag': tag, 'publicationRun': os.environ['GITHUB_RUN_ID'], 'anonymousFullDownloads': downloaded}, indent=2))
     upload(receipt)
     print(json.dumps({'tag': tag, 'assets': len(downloaded), 'anonymousFullDownloadVerification': True}))
 
 
-scope()
-if phase == 'audit':
-    sys.exit(audit())
-elif phase == 'publish':
-    publish()
-else:
-    assert phase == 'scope'
+if __name__ == '__main__':
+    scope()
+    if phase == 'audit':
+        sys.exit(audit())
+    elif phase == 'publish':
+        publish()
+    else:
+        assert phase == 'scope'
