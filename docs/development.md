@@ -27,6 +27,8 @@ Open <http://localhost:4318>. Keep `.local` private. The desktop app uses the op
 
 ## Work on the interface
 
+Use the shared [design system](design-system.md) for tokens, components and screen patterns.
+
 With the secret configured, run `npm run dev` for the backend and `npm run web` in a second terminal for Vite. Vite proxies `/api` to the local backend. Do not expose either server remotely.
 
 Before submitting application changes, run:

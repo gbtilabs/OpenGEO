@@ -154,10 +154,13 @@ try {
   const schedule = runtime.scheduler.list()[0]; assert.equal(schedule.job.kind, "audit"); assert.equal(schedule.job.provider, undefined); assert.equal(schedule.frequency, "daily"); assert.equal(schedule.job.maxCostUsd, 0);
   await page.getByRole("button", { name: "Add schedule", exact: true }).click();
   await page.getByRole("button", { name: "Scheduled workflow", exact: true }).click();
-  await page.getByRole("option", { name: "Visibility recheck", exact: true }).click();
-  await page.getByText("Connect a provider in Connections before scheduling AI work.", { exact: true }).waitFor();
+  // The workflow selector exposes only runnable capabilities for the connected accounts.
+  assert.equal(await page.getByRole('option').count(), 1);
+  assert.equal(await page.getByRole('option', { name: /^Local audit/ }).count(), 1);
+  assert.equal(await page.getByRole("option", { name: "Visibility recheck", exact: true }).count(), 0);
+  await page.keyboard.press('Escape');
   assert.equal(await page.getByRole("button", { name: "Schedule connection", exact: true }).count(), 0);
-  assert.equal(await page.getByRole("button", { name: "Save schedule", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Save schedule", exact: true }).isEnabled(), true);
   await page.getByRole("button", { name: "Content", exact: true }).click();
   await page.getByRole("heading", { name: "Content", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Actions", exact: true }).count(), 0);
@@ -250,4 +253,11 @@ try {
   await page.getByRole("heading", { name: "Your connections" }).waitFor();
   assert.equal(await page.evaluate(() => document.querySelector('main')!.scrollWidth > document.querySelector('main')!.clientWidth), false);
   console.log("UI verified: connection-first setup, local-only path, restart recovery, one free audit, contextual actions, keyboard selectors, provider order, schedules, draft review, unsaved-edit recovery and mobile layout.");
+} catch (error) {
+  const failedPage = browser.contexts()[0]?.pages()[0];
+  if (failedPage) {
+    await failedPage.screenshot({ path: join(screenshots, 'failure.png'), fullPage: true });
+    console.error(await failedPage.locator('body').ariaSnapshot());
+  }
+  throw error;
 } finally { await browser.close(); await runtime.app.close(); rmSync(directory, { recursive: true, force: true }); }

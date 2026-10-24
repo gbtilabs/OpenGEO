@@ -4,7 +4,7 @@
 .provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 18px; align-items: start; }
 .provider-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
 .provider-card.chatgpt { border-color: var(--primary-200); box-shadow: var(--shadow), 0 0 0 3px var(--primary-50); }
-.provider-card-heading { display: flex; align-items: center; gap: 12px; padding: 18px 20px 0; }
+.provider-card-heading { display: flex; align-items: center; gap: var(--space-3); padding: var(--panel-space) var(--panel-space) 0; }
 .provider-card-heading > div:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .provider-card-heading h2 { font-size: 15px; letter-spacing: -0.01em; }
 .provider-card-heading .small { font-size: 12px; }
@@ -25,7 +25,7 @@
 .provider-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--divider); padding: 12px 20px; background: var(--surface-2); margin-top: auto; }
 .provider-footer small { flex: 1; min-width: min(165px, 100%); font-size: 12px; }
 .provider-footer button { flex: none; }
-.provider-config { padding: 18px 20px; border-top: 1px solid var(--divider); display: grid; gap: 16px; }
+.provider-config { padding: var(--panel-space); border-top: 1px solid var(--divider); display: grid; gap: var(--space-4); }
 .provider-config form + form { padding-top: 16px; border-top: 1px solid var(--divider); }
 .provider-config form > .secondary { justify-self: start; }
 .console-key-guide { display: grid; gap: 12px; }

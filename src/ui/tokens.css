@@ -1,0 +1,68 @@
+/* Shared foundation for the workspace, onboarding, settings and workflow dialogs. */
+:root {
+  --font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --canvas: #f6f7f9;
+  --surface: #fff;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+  --sidebar: #fbfbfc;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --divider: #edf1f5;
+  --ink: #0f172a;
+  --text: #334155;
+  --muted: #64748b;
+  --faint: #94a3b8;
+  --primary: #0d6cf2;
+  --primary-hover: #0b5ed7;
+  --primary-text: #0849a8;
+  --primary-50: #eff6ff;
+  --primary-100: #dbeafe;
+  --primary-200: #99c3ff;
+  --teal: #0f766e;
+  --teal-50: #f0fdfa;
+  --success: #067647;
+  --success-50: #ecfdf3;
+  --success-200: #abefc6;
+  --warning: #b54708;
+  --warning-50: #fffaeb;
+  --warning-200: #fedf89;
+  --danger: #be123c;
+  --danger-50: #fff1f2;
+  --danger-200: #fecdd3;
+  --violet: #6941c6;
+  --violet-50: #f4f3ff;
+  --mention: var(--primary);
+  --citation: var(--teal);
+  --undetected: #d99522;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius: 16px;
+  --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --panel-space: 24px;
+  --page-space: 32px;
+  --section-gap: 20px;
+  --control-height: 38px;
+  --text-caption: 12px;
+  --text-body: 13px;
+  --text-heading: 15px;
+  --text-title: 26px;
+  --text-metric: 32px;
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / .04);
+  --shadow: 0 1px 2px rgb(15 23 42 / .03), 0 12px 28px -20px rgb(15 23 42 / .18);
+  --shadow-lg: 0 24px 64px -16px rgb(15 23 42 / .22), 0 6px 16px -8px rgb(15 23 42 / .12);
+  --focus: 0 0 0 3px rgb(13 108 242 / .18);
+  --hero-background: linear-gradient(115deg, #0a3fb8, #0d5fe6 60%, #1784f5);
+  --hero-text: #fff;
+  --hero-muted: #e0edff;
+  --soft: var(--surface-2);
+}
+@media (max-width: 1100px) { :root { --page-space: 24px; --panel-space: 20px; } }
+@media (max-width: 700px) { :root { --page-space: 16px; --panel-space: 16px; --section-gap: 16px; --text-title: 24px; --control-height: 42px; } }

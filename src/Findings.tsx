@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ExternalLink, Lightbulb, Search, Check, ArrowRight, FilePenLine, ScanSearch, Link, BookOpen, Wrench } from 'lucide-react';
 import type { Finding, Job } from '../server/contracts';
 import { api } from './api';
@@ -8,8 +8,9 @@ import { findingGroups, targetLabel, targetDomain } from './finding-groups';
 import { SiteIcon } from './SiteIcon';
 import './findings.css';
 import { shortDate } from './format';
+import { EmptyState } from './ui/Primitives';
 
-export function Findings({ findings, projectId, run, compact = false, mode = 'opportunities', openAll, openFinding, createContent, drafts = [], openContent, focusedFinding, onFocused, jobs = [], measurementId, emptyMessage, emptyTitle = 'No recommendations yet' }: {
+export function Findings({ findings, projectId, run, compact = false, mode = 'opportunities', openAll, openFinding, createContent, drafts = [], openContent, focusedFinding, onFocused, jobs = [], measurementId, emptyMessage, emptyAction, emptyTitle = 'No recommendations yet' }: {
   findings: Finding[];
   projectId: string;
   run: (action: () => Promise<unknown>) => Promise<void>;
@@ -26,6 +27,7 @@ export function Findings({ findings, projectId, run, compact = false, mode = 'op
   measurementId?: string;
   emptyMessage?: string;
   emptyTitle?: string;
+  emptyAction?: ReactNode;
 }) {
   const [status, setStatus] = useState('active'), [query, setQuery] = useState(''), [type, setType] = useState('all');
   const [saving, setSaving] = useState<string | null>(null);
@@ -96,6 +98,6 @@ export function Findings({ findings, projectId, run, compact = false, mode = 'op
           })()}
         </div>
       </article>)}</div>
-    </details>) : <div className="empty"><Lightbulb size={24} /><h3>{findings.length ? 'No matching improvements' : emptyTitle}</h3><p>{findings.length ? 'Choose another status or clear your search.' : emptyMessage ?? 'Analyze your collected answers and audited pages to prepare an improvement plan.'}</p></div>}
+    </details>) : <EmptyState icon={Lightbulb} title={findings.length ? status === 'active' && !query && type === 'all' ? 'Your current improvements are complete' : 'No matching improvements' : emptyTitle} action={findings.length ? <button className="secondary" onClick={() => { setStatus('all'); setQuery(''); setType('all'); }}>View all improvements</button> : emptyAction}>{findings.length ? status === 'active' && !query && type === 'all' ? 'Review your completed work, then recheck the same questions to measure what changed.' : 'Choose another status or clear your search.' : emptyMessage ?? 'Analyze your collected answers and audited pages to prepare an improvement plan.'}</EmptyState>}
   </div>;
 }

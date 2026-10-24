@@ -1,7 +1,7 @@
 .setup-shell { min-height: 100dvh; background: var(--canvas); }
-.setup-header { max-width: 1120px; margin: auto; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.setup-header { max-width: 1120px; margin: auto; padding: var(--space-6) var(--page-space); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .setup-local { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
-.setup-main { width: min(1120px, 100%); padding: 24px 32px 64px; margin: auto; overflow: visible; }
+.setup-main { width: min(1120px, 100%); padding: var(--space-6) var(--page-space) 64px; margin: auto; overflow: visible; }
 .setup-progress { display: flex; align-items: center; gap: 12px; list-style: none; margin: 0 0 32px; padding: 0; }
 .setup-progress li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); flex: 1; min-width: 0; }
 .setup-progress li:last-child { flex: none; }
@@ -47,12 +47,12 @@
 .setup-actions .primary { margin-left: auto; }
 .local-audit-option { display: grid; gap: 7px; }
 .local-audit-option small { font-size: 11px; max-width: 245px; line-height: 1.5; }
-.setup-body form { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+.setup-body form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--panel-space); box-shadow: var(--shadow-xs); }
 .setup-body form label { font-size: 13px; }
 .setup-body input, .setup-body textarea { font-size: 14px; min-height: 44px; }
 .setup-body .provider-config form { padding: 0; border: 0; border-radius: 0; }
 .setup-body .setup-actions { margin-top: 4px; }
-.setup-summary { margin: 0; padding: 8px 28px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.setup-summary { margin: 0; padding: var(--space-2) var(--panel-space); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .setup-summary > div { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 1.5fr); gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--divider); }
 .setup-summary > div:last-child { border-bottom: 0; }
 .setup-summary dt { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }

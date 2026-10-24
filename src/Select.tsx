@@ -4,7 +4,7 @@ import { Check, ChevronDown, Search } from "lucide-react";
 
 export type SelectOption = { value: string; label: string; detail?: string; icon?: ReactNode };
 
-/** Portal placement keeps menus usable inside cards, scrolling dialogs and the sidebar. */
+/** Keep menus inside a modal's top layer while escaping ordinary scrolling cards. */
 export function Select({ options, value, defaultValue, onChange, label, name, placeholder = "Choose an option", disabled = false, searchable = true, compact = false, "aria-invalid": invalid, "aria-describedby": description }: {
   options: SelectOption[]; value?: string; defaultValue?: string; onChange?: (value: string) => void;
   label: string; name?: string; placeholder?: string; disabled?: boolean; searchable?: boolean; compact?: boolean;
@@ -61,6 +61,6 @@ export function Select({ options, value, defaultValue, onChange, label, name, pl
         </button>)}
         {!filtered.length && <p className="choice-empty">No matching options</p>}
       </div>
-    </div>, document.body)}
+    </div>, trigger.current?.closest('dialog') ?? document.body)}
   </div>;
 }

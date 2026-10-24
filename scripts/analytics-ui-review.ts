@@ -7,6 +7,7 @@ import { join, resolve, relative, isAbsolute } from "node:path";
 import { chromium } from "playwright";
 import { start } from "../server/main.js";
 import { comparisonKey, summarize } from "../server/analysis.js";
+import { parsePage } from '../server/audit.js';
 import {
   projectInput,
   jobInput,
@@ -202,6 +203,11 @@ try {
       "Responses",
       "Sources",
       "Competitors",
+      "Site Audit",
+      "Opportunities",
+      "Content",
+      "Reports",
+      "Settings",
     ]) {
       await navigate(page, view);
       await page.getByRole("heading", { name: view, exact: true }).waitFor();
@@ -256,6 +262,31 @@ try {
         path: join(output, `${view.toLowerCase()}-${width}.png`),
         fullPage: view === "Overview",
       });
+      // The workspace scrolls inside main, so a page screenshot alone misses lower panels.
+      const charts = page.locator('.visibility-chart > svg');
+      for (let index = 0; index < await charts.count(); index++) {
+        const chart = charts.nth(index);
+        await chart.scrollIntoViewIfNeeded();
+        assert.deepEqual(await chart.evaluate(svg => {
+          const bounds = svg.getBoundingClientRect();
+          return [...svg.querySelectorAll('text')].filter(label => {
+            const box = label.getBoundingClientRect();
+            return box.left < bounds.left - 1 || box.right > bounds.right + 1 || box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1;
+          }).map(label => label.textContent);
+        }), [], `${view} chart labels at ${width}px`);
+        assert.ok((await chart.boundingBox())!.height >= 205, 'Chart must not shrink in a flex panel');
+        await chart.locator('xpath=ancestor::section[1]').screenshot({ path: join(output, `${view.toLowerCase()}-chart-${width}.png`) });
+      }
+      await page.locator('main').evaluate(element => { element.scrollTop = element.scrollHeight; });
+      await page.screenshot({ path: join(output, `${view.toLowerCase()}-bottom-${width}.png`) });
+      if (view === 'Settings') {
+        for (const tab of ['Schedules', 'Data & privacy', 'About']) {
+          await page.getByRole('tab', { name: tab, exact: true }).click();
+          await page.getByRole('tabpanel').waitFor();
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${tab} at ${width}px`);
+          await page.getByRole('tabpanel').screenshot({ path: join(output, `settings-${tab.replaceAll(/[^a-z]/gi, '-')}-${width}.png`) });
+        }
+      }
       if (view === "Overview") {
         await page
           .getByRole("heading", { name: "What the answers say", exact: true })
@@ -339,15 +370,24 @@ try {
     .click();
   await page.getByRole("heading", { name: "Responses", exact: true }).waitFor();
   assert.equal(await page.locator(".compact-answer").count(), 4);
-  await page.locator(".answer-detail summary").first().focus();
+  const answerOpener = page.getByRole('button', { name: 'Read full answer and sources', exact: true }).first();
+  await answerOpener.focus();
   await page.keyboard.press("Enter");
   assert.match(
-    await page.locator(".answer-detail[open]").innerText(),
+    await page.getByRole('dialog', { name: 'Answer and sources', exact: true }).innerText(),
     /End of full test answer\./,
   );
-  assert.equal(await page.locator('.answer-detail[open] .answer-document strong').innerText(), 'UX review evidence');
-  assert.equal(await page.locator('.answer-detail[open] .answer-sources .site-icon').count(), 3);
-  assert.ok((await page.locator('.answer-detail[open] .answer-sources a').first().getAttribute('href'))?.startsWith('https://'));
+  assert.equal(await page.locator('.answer-reader .answer-document strong').innerText(), 'UX review evidence');
+  assert.equal(await page.locator('.answer-reader .answer-sources .site-icon').count(), 3);
+  assert.ok((await page.locator('.answer-reader .answer-sources a').first().getAttribute('href'))?.startsWith('https://'));
+  await page.screenshot({ path: join(output, 'answer-drawer-mobile.png') });
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Answer and sources', exact: true }).waitFor({ state: 'detached' });
+  assert.equal(await answerOpener.evaluate(element => element === document.activeElement), true, 'Closing the drawer restores keyboard focus');
+  for (const [label, count] of [['Cited', 2], ['Named only', 1], ['Not mentioned', 1], ['All answers', 4]] as const) {
+    await page.getByRole('group', { name: 'Filter answers by outcome' }).getByRole('button', { name: new RegExp('^' + label) }).click();
+    assert.equal(await page.locator('.compact-answer').count(), count);
+  }
   await page
     .getByRole("button", { name: "Show all answers", exact: true })
     .click();
@@ -403,13 +443,78 @@ try {
   ).json();
   assert.equal(emptyWorkspace.metrics.mentionRate, null);
   assert.deepEqual(emptyWorkspace.presentation.history, []);
+  // Exercise the shared unsaved-changes dialog against real local draft persistence.
+  const draft = { id: randomUUID(), topic: 'Synthetic design review draft', markdown: '# Review\n\nOriginal.', brief: 'Test data.', createdAt: new Date().toISOString(), locale: 'en-US', reviewCurrent: true, sourceEvidence: [], review: { issues: [] } };
+  runtime.store.put('content', project.id, currentId, draft);
+  await page.getByRole('button', { name: 'Refresh workspace', exact: true }).click();
+  await navigate(page, 'Content');
+  await page.getByRole('group', { name: 'Filter draft review' }).getByRole('button', { name: /^Needs review/ }).click();
+  await page.getByRole('heading', { name: 'No drafts waiting for review', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Show all drafts', exact: true }).click();
+  await page.getByRole('button', { name: 'Open draft: ' + draft.topic, exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Markdown', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Draft for ' + draft.topic, exact: true }).fill('# Review\n\nSaved locally.');
+  await navigate(page, 'Overview');
+  const unsaved = page.getByRole('dialog', { name: 'Save your changes?', exact: true });
+  await unsaved.getByRole('button', { name: 'Keep editing', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: 'Draft for ' + draft.topic, exact: true }).inputValue(), '# Review\n\nSaved locally.');
+  await navigate(page, 'Overview');
+  await unsaved.getByRole('button', { name: 'Save and continue', exact: true }).click();
+  await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
+  assert.equal(runtime.store.artifacts<any>(project.id, 'content').find(item => item.id === draft.id).markdown, '# Review\n\nSaved locally.');
+  const audit = runtime.store.enqueue(jobInput.parse({ projectId: project.id, kind: 'audit' }), 'synthetic-design-audit');
+  runtime.store.put('page', project.id, audit.id, parsePage('https://example.com/', 200, '<title>Example domain</title><h1>Example domain</h1><p>Synthetic interface review, not a live audit.</p>'));
+  runtime.store.updateJob(audit.id, { status: 'completed' });
+  const diagnosis = runtime.store.enqueue(jobInput.parse({ projectId: project.id, kind: 'diagnose', provider: 'chatgpt', maxCostUsd: 0 }), 'synthetic-design-diagnosis');
+  runtime.store.updateJob(diagnosis.id, { status: 'completed', result: { measurementJobId: currentId } });
+  const finding = { id: randomUUID(), projectId: project.id, jobId: diagnosis.id, title: 'Explain the example domain purpose', description: 'Synthetic review finding supported by the example page.', priority: 'medium', targetUrl: 'https://example.com/', evidenceIds: [], steps: ['Review the existing explanation before editing.'], confidence: 'inferred', status: 'open', kind: 'analysis' };
+  runtime.store.put('finding', project.id, diagnosis.id, finding);
+  runtime.store.put('finding', project.id, audit.id, { ...finding, id: randomUUID(), jobId: audit.id, title: 'Synthetic heading check', kind: 'heading' });
+  await page.getByRole('button', { name: 'Refresh workspace', exact: true }).click();
+  await navigate(page, 'Site Audit');
+  await page.getByRole('textbox', { name: 'Search audited pages' }).fill('does-not-exist');
+  await page.getByRole('heading', { name: 'No matching pages', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Show all pages', exact: true }).click();
+  await page.locator('.audit-pages-table summary').first().click();
+  assert.equal(await page.locator('.audit-pages-table details[open] li').first().innerText(), 'Example domain');
+  await page.getByRole('button', { name: /^Unavailable/ }).click();
+  await page.getByRole('heading', { name: 'No unavailable pages in this audit', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Show all pages', exact: true }).click();
+  for (const width of [1360, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const view of ['Site Audit', 'Opportunities', 'Content']) {
+      await navigate(page, view);
+      if (view === 'Opportunities') await page.locator('.improvement-group > summary').getByText(finding.title, { exact: true }).waitFor();
+      if (view === 'Site Audit') await page.getByText('Synthetic heading check', { exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${view} populated at ${width}px`);
+      await page.screenshot({ path: join(output, `${view.toLowerCase()}-loaded-${width}.png`) });
+    }
+    await page.getByRole('button', { name: 'Open draft: ' + draft.topic, exact: true }).click();
+    await page.getByRole('heading', { name: draft.topic, exact: true }).waitFor();
+    await page.screenshot({ path: join(output, `content-editor-${width}.png`) });
+  }
+  for (const width of [1360, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole('button', { name: width === 1360 ? 'Website' : 'Mobile website', exact: true }).click();
+    await page.getByRole('option', { name: /example.org/ }).click();
+    for (const view of ['Overview', 'Visibility', 'Responses', 'Sources', 'Competitors', 'Site Audit', 'Opportunities', 'Content', 'Reports']) {
+      await navigate(page, view);
+      await page.getByRole('heading', { name: view, exact: true }).waitFor();
+      await page.locator('.workspace-loading').waitFor({ state: 'hidden' });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${view} empty at ${width}px`);
+      await page.screenshot({ path: join(output, `${view.toLowerCase()}-empty-${width}.png`) });
+    }
+  }
   assert.deepEqual(failures, []);
   console.log(
     JSON.stringify({
       output,
-      viewportChecks: 15,
+      viewportChecks: 30,
+      populatedViewportChecks: 6,
+      emptyViewportChecks: 18,
+      settingsTabChecks: 9,
       tests:
-        "plain main-screen copy, optional measurement details, answer outcomes, comparison settings preservation, gaps, zero values, deduplication, source grouping/search/drill-down, question drill-down, keyboard answers/chart, editable questions and empty history",
+        "all ten screens, populated audit/opportunities/content, optional measurement details, outcome filters, comparison settings preservation, gaps, zero values, deduplication, source grouping/search/drill-down, question drill-down, keyboard answer drawer/chart, editable questions, empty history and unsaved-draft persistence",
       providerRequests: 0,
       rendererErrors: failures.length,
     }),

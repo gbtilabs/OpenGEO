@@ -8,6 +8,7 @@ import { SiteIcon } from './SiteIcon';
 import { AnswerCard } from './DataPresentation';
 import './competitors.css';
 import { dateTime } from './format';
+import { EmptyState } from './ui/Primitives';
 
 function hostname(value: string) {
   try { return new URL(value.includes('://') ? value : 'https://' + value).hostname.replace(/^www\./, ''); }
@@ -89,6 +90,7 @@ export function Competitors({ project, jobs, review, run, activity }: {
     {error && <div className="inline-error" role="alert">{error}<button className="secondary compact" onClick={() => setRetry(value => value + 1)}>Try again</button></div>}
     {check && !completedMeasurement(check) && <p className="competitor-progress">This check is incomplete. You can explore its saved answers; website role review becomes available when collection finishes.</p>}
     <section className="panel competitor-ranking">
+      {!loading && answers.length > 0 && <div className="competitor-own-benchmark"><SiteIcon projectId={project.id} domain={project.domain} size={36} /><div><strong>{project.brand}</strong><span>Your website in this check</span></div><div><strong>{Math.round(coverage(hostname(project.domain)).length / answers.length * 100)}%</strong><span>{coverage(hostname(project.domain)).length} of {answers.length} answers cite your site</span></div></div>}
       <div className="competitor-toolbar"><div className="segmented-control" role="group" aria-label="Website roles"><button aria-pressed={tab === 'competitors'} onClick={() => { setTab('competitors'); setDetail(null); }}><Users size={14} />Competitors <span>{alternatives.size}</span></button><button aria-pressed={tab === 'references'} onClick={() => { setTab('references'); setDetail(null); }}><BookOpen size={14} />References <span>{references.size}</span></button><button aria-pressed={tab === 'unreviewed'} onClick={() => { setTab('unreviewed'); setDetail(null); }}><Search size={14} />To review <span>{unreviewed.size}</span></button></div>
         <label className="search"><Search size={15} /><input aria-label="Search comparison websites" placeholder="Find a website" value={query} onChange={event => setQuery(event.target.value)} /></label>
         <button className="secondary compact" disabled={loading || !answers.length || !check || !completedMeasurement(check) || !!pending} onClick={() => check && review(check.id)}><RefreshCw size={14} />Review website roles</button></div>
@@ -105,7 +107,7 @@ export function Competitors({ project, jobs, review, run, activity }: {
           <div className="competitor-rate"><strong>{rate === null ? 'No data' : rate.toFixed(0) + '%'}</strong><span>{ids.length} / {answers.length} answers</span><div><i style={{ width: (rate ?? 0) + '%' }} /></div></div>
           <button className="secondary compact" disabled={!ids.length && !site.observationIds.length} aria-label={'View answers for ' + site.name} onClick={() => setDetail(detail === site.domain ? null : site.domain)}><ArrowRight size={16} /></button>
         </div>;
-      }) : <div className="empty"><Users size={28} /><h3>{answers.length ? tab === 'competitors' ? 'No competing offerings confirmed yet' : tab === 'references' ? 'No cited references in this check' : 'All cited websites have a reviewed role' : 'Start with a visibility check'}</h3><p>{answers.length ? tab === 'unreviewed' ? 'Explore competitors and references to read the supporting answers.' : 'Review website roles using your connected analysis provider, or add a competitor you already know below.' : 'Your saved answers will show which websites appear for your customers\' questions.'}</p></div>}
+      }) : <EmptyState icon={Users} title={query ? 'No matching websites' : answers.length ? tab === 'competitors' ? 'No competing offerings confirmed yet' : tab === 'references' ? 'No cited references in this check' : 'All cited websites have a reviewed role' : 'Start with a visibility check'} action={query ? <button className="secondary" onClick={() => setQuery('')}>Clear search</button> : undefined}>{query ? 'Try a website name or domain, or clear the search to see this group.' : answers.length ? tab === 'unreviewed' ? 'Explore competitors and references to read the supporting answers.' : 'Review website roles using your connected analysis provider, or add a competitor you already know below.' : 'Your saved answers will show which websites appear for your customers\' questions. You can add known competitors to your comparison list below.'}</EmptyState>}
       <p className="competitor-footnote">Citation rate counts answers linking to a website, not recommendations or market share. All values use the selected check.</p>
     </section>
     {detail && <section className="panel competitor-answer-detail"><div className="panel-heading"><h2>Explore {inspected?.name ?? detail}</h2><button className="secondary compact" aria-label="Close website answers" onClick={() => setDetail(null)}><X size={16} /></button></div>

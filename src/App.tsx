@@ -33,17 +33,15 @@ import {
   ShieldCheck,
   Menu,
   ExternalLink,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Sparkles,
 } from "lucide-react";
-import { percent, shortDate, relativeTime, dateTime, pointChange, usd } from "./format";
+import { percent, shortDate, relativeTime, dateTime, usd } from "./format";
 import { api } from "./api";
 import { ConnectionSettings, type ChatGPTProfiles } from "./ConnectionSettings";
 import { Onboarding } from "./Onboarding";
 import { QuestionRows, type QuestionRow } from "./QuestionRows";
 import { Select } from "./Select";
+import { AuditPages } from './AuditPages';
 import { FormFeedback, useFormFeedback } from "./FormFeedback";
 import { ProviderIcon, providerLabels, providerOptions, providerOrder } from "./provider-ui";
 import { AnswerCard, AnswerDistribution, AuditEssentials, CheckHistory, CitationComparison, MeasurementScope, PromptTable, SourcesTable, VisibilityChart } from "./DataPresentation";
@@ -51,11 +49,14 @@ import { SiteIcon } from "./SiteIcon";
 import { AuditSummary } from "./AuditSummary";
 import { AuditCoverageDetails } from "./AuditCoverageDetails";
 import { Findings } from "./Findings";
-import { findingGroups, opportunityFindings, auditFindings, targetDomain, targetLabel } from "./finding-groups";
+import { findingGroups, opportunityFindings, auditFindings, targetDomain } from "./finding-groups";
 import { ContentWorkspace } from "./ContentWorkspace";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { runsNeedingAttention } from "./runs";
 import { Competitors } from "./Competitors";
+import { PageHeader, EmptyState, emptyIcon, MetricCard as Metric } from './ui/Primitives';
+import { OverviewSummary } from './OverviewSummary';
+import { Dialog as Modal } from './ui/Dialog';
 import { completedMeasurement } from "../server/portable-results";
 import type { Presentation } from "../server/presentation";
 import identity from "../brand/identity.json";
@@ -111,14 +112,7 @@ const navigation = [
   ["Settings", Settings],
 ] as const;
 function Empty({ title, children }: { title: string; children: ReactNode }) {
-  const Icon = /draft|create|content/i.test(title) ? FileText : /audit|page/i.test(title) ? ScanSearch : /answer|response/i.test(title) ? MessagesSquare : /recommendation|improvement/i.test(title) ? Lightbulb : Search;
-  return (
-    <div className="empty">
-      <Icon size={24} />
-      <h3>{title}</h3>
-      <p>{children}</p>
-    </div>
-  );
+  return <EmptyState title={title} icon={emptyIcon(title)}>{children}</EmptyState>;
 }
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]),
@@ -137,6 +131,7 @@ export function App() {
     [jobDialog, setJobDialog] = useState<Job["kind"] | null>(null),
     [revision, setRevision] = useState<any>(null),
     [query, setQuery] = useState(""),
+    [answerStatus, setAnswerStatus] = useState<'all' | 'cited' | 'named' | 'absent'>('all'),
     [evidenceFilter, setEvidenceFilter] = useState<{ ids: string[]; label: string } | null>(null),
     [contentTopic, setContentTopic] = useState(""),
     [contentFinding, setContentFinding] = useState<Finding | null>(null),
@@ -217,9 +212,12 @@ export function App() {
   const connectedProviders = providerOrder.filter((provider) => connected[provider]);
   const opportunities = opportunityFindings(w?.findings ?? []);
   const auditIssues = auditFindings(w?.findings ?? []);
+  const auditIssueCount = findingGroups(auditIssues).length;
   const ownCitations = w?.presentation.outcomes.find((group) => group.kind === "cited");
   const ownWebsite = w ? { domain:w.project.domain, citationRate:w.metrics.citationRate, answersCiting:ownCitations?.count ?? 0, answersCollected:w.metrics.completed, observationIds:ownCitations?.observationIds ?? [] } : null;
-  const filteredAnswers = w?.observations.filter((answer) => (!evidenceFilter || evidenceFilter.ids.includes(answer.id)) && (answer.prompt + " " + answer.answer).toLowerCase().includes(query.trim().toLowerCase())) ?? [];
+  const scopedAnswers = w?.observations.filter((answer) => (!evidenceFilter || evidenceFilter.ids.includes(answer.id)) && (answer.prompt + " " + answer.answer).toLowerCase().includes(query.trim().toLowerCase())) ?? [];
+  const answerMatches = (answer: Observation, status: typeof answerStatus) => status === 'all' || (status === 'cited' ? answer.cited : status === 'named' ? answer.mentioned && !answer.cited : !answer.mentioned && !answer.cited);
+  const filteredAnswers = scopedAnswers.filter(answer => answerMatches(answer, answerStatus));
   useEffect(() => {
     if (w) setSelectedContent((id) => w.content.some((draft) => draft.id === id) ? id : "");
   }, [w?.project.id, w?.content.map((draft) => draft.id).join(",")]);
@@ -232,18 +230,18 @@ export function App() {
       setPendingContent(null);
     } else if (job && ['failed', 'cancelled'].includes(job.status)) setPendingContent(null);
   }, [w, pendingContent, unsavedDraft]);
-  useEffect(() => { setEvidenceFilter(null); }, [w?.project.id, w?.measurement?.id]);
+  useEffect(() => { setEvidenceFilter(null); setAnswerStatus('all'); }, [w?.project.id, w?.measurement?.id]);
   function navigate(action: () => void) {
     if (unsavedDraft) { setNavigationError(""); setPendingNavigation(() => action); }
     else action();
   }
   const changePage = (label: string) => {
     if (page === label) mainRef.current?.scrollTo(0, 0);
-    else navigate(() => { setPage(label); setQuery(""); setEvidenceFilter(null); if (label === 'Content') setSelectedContent(''); });
+    else navigate(() => { setPage(label); setQuery(""); setAnswerStatus('all'); setEvidenceFilter(null); if (label === 'Content') setSelectedContent(''); });
   };
   const openConnections = () => navigate(() => { setPage("Settings"); setQuery(""); setEvidenceFilter(null); setConnectionsRequest(value => value + 1); });
   const openEvidence = (ids: string[], label: string) => navigate(() => {
-    setPage("Responses"); setQuery(""); setEvidenceFilter({ ids, label });
+    setPage("Responses"); setQuery(""); setAnswerStatus('all'); setEvidenceFilter({ ids, label });
   });
   const openOpportunity = (finding: Finding) => navigate(() => {
     setPage('Opportunities'); setFocusedFinding(finding.id);
@@ -331,15 +329,7 @@ export function App() {
         </header>
         <main ref={mainRef} id="main-content" tabIndex={-1}>
           {profiles.welcome && page === 'Overview' && <section className="plan-welcome" aria-label="ChatGPT plan usage"><ProviderIcon provider="chatgpt" size={20} /><div><h2>Your ChatGPT plan is connected</h2><p>Your plan limits apply.</p></div><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Manage usage <ArrowUpRight size={14} /></a><button className="icon-button" aria-label="Dismiss ChatGPT connection notice" onClick={() => void run(() => api("/connections/chatgpt/acknowledge-plan", {}))}><X size={16} /></button></section>}
-          <div className="page-heading">
-            <div>
-              <h1>{page}</h1>
-              <p>
-                {page === "Overview"
-                  ? identity.tagline
-                  : descriptions[page]}
-              </p>
-            </div>
+          <PageHeader title={page} description={page === 'Overview' ? identity.tagline : descriptions[page]} icon={navigation.find(([label]) => label === page)?.[1] ?? LayoutDashboard}>
             {p && headingAction && (
               <button
                 className="primary"
@@ -350,7 +340,7 @@ export function App() {
                 {headingAction.label}
               </button>
             )}
-          </div>
+          </PageHeader>
           {error && (
             <div role="alert" className="alert">
               {error}
@@ -373,6 +363,7 @@ export function App() {
               {w.measurement && ["Overview", "Visibility", "Responses", "Sources"].includes(page) && <MeasurementScope measurement={w.measurement} observations={w.observations} missing={w.metrics.missing} />}
               {page === "Overview" && (
                 <>
+                  <OverviewSummary brand={p!.brand} presentation={w.presentation} collected={w.metrics.completed} audited={w.pages.length} missing={w.metrics.missing} onAnswers={() => changePage('Responses')} onAudit={() => changePage('Site Audit')} />
                   {measured ? <div className="metrics">
                     <Metric
                       title="Brand mentions"
@@ -385,6 +376,7 @@ export function App() {
                       title="Website citations"
                       value={percent(w.metrics.citationRate)}
                       detail="Collected answers linking to your site"
+                      tone="citation"
                       points={comparison?.citationPoints}
                       since={comparison?.previousAt}
                     />
@@ -404,8 +396,8 @@ export function App() {
                     />
                   </div> : activeAudit && <section className="next-step-card"><ScanSearch size={25} /><div><h2>{activeAudit.status === "queued" ? "Your site audit is queued" : "Your site audit is running"}</h2><p>{activeAudit.progress}</p></div></section>}
                   <RunsPanel jobs={runsNeedingAttention(w.jobs).filter((job) => measured || job.id !== activeAudit?.id)} run={run} />
-                  {measured && !activeMeasurement && !analyzed && !activeAnalysis && !pausedAnalysis && <section className="insight-banner"><Lightbulb size={22} /><div><h2>{w.metrics.mentionRate === 0 ? 'Your brand was missing from this check' : 'Turn your visibility into your next improvement'}</h2><p>{`${w.metrics.completed} answers collected. Analyze them alongside your pages to find where useful content can make a difference.`}</p></div>{!canAnalyze && <button className="secondary" onClick={openConnections}>Connect for analysis <ArrowRight size={15} /></button>}</section>}
                   {measured && <><div className="analytics-grid"><VisibilityChart presentation={w.presentation} openVisibility={() => changePage("Visibility")} /><SourcesTable presentation={w.presentation} collected={w.metrics.completed} compact evidence={openEvidence} openSources={() => changePage("Sources")} projectId={p!.id} ownDomain={p!.domain} /></div><div className="analytics-grid"><AnswerDistribution presentation={w.presentation} collected={w.metrics.completed} requested={w.metrics.requested} missing={w.metrics.missing} collecting={activeMeasurement?.id === w.measurement?.id} evidence={openEvidence} /><CitationComparison projectId={p!.id} ownDomain={p!.domain} rows={[ownWebsite!,...w.competitors]} evidence={openEvidence} openCompetitors={() => changePage("Competitors")} /></div></>}
+                  {measured && !activeMeasurement && !analyzed && !activeAnalysis && !pausedAnalysis && <section className="insight-banner"><Lightbulb size={22} /><div><h2>{w.metrics.mentionRate === 0 ? 'Your brand was missing from this check' : 'Turn your visibility into your next improvement'}</h2><p>{`${w.metrics.completed} answers collected. Analyze them alongside your pages to find where useful content can make a difference.`}</p></div><button className="secondary" onClick={() => canAnalyze ? changePage('Opportunities') : openConnections()}>{canAnalyze ? 'Review next steps' : 'Connect for analysis'} <ArrowRight size={15} /></button></section>}
                   {!measured && audited && <AuditSummary audit={w.presentation.audit} domain={p!.domain} findings={w.findings} openAudit={() => changePage("Site Audit")} />}
                   {!measured && <section className="panel next-steps">
                       <div className="panel-heading">
@@ -482,66 +474,26 @@ export function App() {
                 </>
               )}
               {page === "Site Audit" && (
-                <><RunsPanel jobs={runsNeedingAttention(w.jobs, ["audit"])} run={run} /><AuditEssentials audit={w.presentation.audit} />{auditIssues.length > 0 && <section className="panel"><div className="panel-heading"><h2>Page improvements</h2><span>{findingGroups(auditIssues).length} checks to review</span></div><Findings findings={auditIssues} projectId={p!.id} run={run} mode="audit" /></section>}<section className="panel">
+                <><RunsPanel jobs={runsNeedingAttention(w.jobs, ["audit"])} run={run} /><AuditEssentials audit={w.presentation.audit} />{auditIssues.length > 0 && <section className="panel"><div className="panel-heading"><h2>Page improvements</h2><span>{auditIssueCount} {auditIssueCount === 1 ? 'check' : 'checks'} to review</span></div><Findings findings={auditIssues} projectId={p!.id} run={run} mode="audit" /></section>}<section className="panel">
                   <div className="panel-heading">
                     <h2>Audited pages</h2>
                     <span>{w.pages.length} {w.pages.length === 1 ? "page" : "pages"}</span>
                   </div>
                   {w.auditCoverage && <AuditCoverageDetails coverage={w.auditCoverage} />}
                   {w.pages.length ? (
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Page</th>
-                            <th>Access</th>
-                            <th>Main heading</th>
-                            <th>Structured data</th>
-                            <th>Last checked</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {w.pages.map((e) => (
-                            <tr key={e.id}>
-                              <td className="page-cell">
-                                <a
-                                  href={e.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {e.title || targetLabel(e.url)}
-                                </a>
-                                <small title={e.url}>{e.title ? targetLabel(e.url) : "No page title"}</small>
-                              </td>
-                              <td>
-                                <span
-                                  className={
-                                    "badge " +
-                                    (e.status < 400 ? "good" : "high")
-                                  }
-                                >
-                                  {e.status < 400 ? "Available" : "Unavailable"}
-                                </span>
-                              </td>
-                              <td>{e.h1.length === 0 ? "Missing" : e.h1.length === 1 ? "Present" : e.h1.length + " headings"}</td>
-                              <td title={e.schemaTypes.join(", ")}>{e.schemaTypes.length ? "Present" : "Not found"}</td>
-                              <td>
-                                {shortDate(e.fetchedAt)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <AuditPages pages={w.pages} />
                   ) : (
                     <Empty title={w.auditCoverage ? "No pages could be inspected" : "No pages audited yet"}>
-                      {w.auditCoverage ? "Review the audit coverage above before starting another run. Missing pages have not been assessed." : "Run a local audit to inspect your site's content and technical signals."}
+                      {w.auditCoverage ? "Review the audit coverage above before starting another run. Missing pages have not been assessed." : activeAudit ? 'Pages appear here as your audit finishes. Follow its progress above.' : <>Check crawl access, page headings and structured data. The audit runs locally and needs no provider account.<br /><button className="primary" onClick={() => setJobDialog('audit')}>Start site audit</button></>}
                     </Empty>
                   )}
                 </section></>
               )}
               {page === "Visibility" && (
                 <>
+                  {!w.measurement && <section className="panel"><Empty title="Find out how AI answers your customers">
+                    Your saved questions define the check. Collect answers to measure brand mentions and website citations, then repeat the same questions to compare results.<br /><button className="primary" onClick={() => canMeasure ? setJobDialog('measure') : openConnections()}>{canMeasure ? 'Start visibility check' : 'Connect an answer provider'}</button>
+                  </Empty></section>}
                   {measured && <div className="metrics three">
                     <Metric
                       title="Brand mentions"
@@ -554,6 +506,7 @@ export function App() {
                       title="Website citations"
                       value={percent(w.metrics.citationRate)}
                       detail="Answers linking to your site"
+                      tone="citation"
                       points={comparison?.citationPoints}
                       since={comparison?.previousAt}
                     />
@@ -584,17 +537,18 @@ export function App() {
                     </label>
                   </div>
                   {evidenceFilter && <div className="evidence-filter"><span>Answers for: {evidenceFilter.label}</span><button className="text-button" onClick={() => setEvidenceFilter(null)}>Show all answers <X size={14} /></button></div>}
+                  {w.observations.length > 0 && <div className="response-toolbar"><div className="filter-chips" role="group" aria-label="Filter answers by outcome">{([{ value: 'all', label: 'All answers' }, { value: 'cited', label: 'Cited' }, { value: 'named', label: 'Named only' }, { value: 'absent', label: 'Not mentioned' }] as const).map(option => <button key={option.value} type="button" aria-pressed={answerStatus === option.value} onClick={() => setAnswerStatus(option.value)}>{option.label}<span>{scopedAnswers.filter(answer => answerMatches(answer, option.value)).length}</span></button>)}</div><span className="small" role="status">{filteredAnswers.length} {filteredAnswers.length === 1 ? 'answer' : 'answers'} shown</span></div>}
                   {filteredAnswers.length ? (
                     filteredAnswers.map((o) => <AnswerCard observation={o} key={o.id} />)
                   ) : (
                     <Empty title={w.observations.length ? "No matching answers" : "No collected answers"}>
-                      {w.observations.length ? "Try another search or clear it to see your collected answers." : "Run a visibility check to inspect the full responses and their sources."}
+                      {w.observations.length ? <>Try another search or clear your filters.<br /><button className="text-button" onClick={() => { setQuery(''); setAnswerStatus('all'); setEvidenceFilter(null); }}>Clear filters</button></> : activeMeasurement ? 'Answers are being collected. Follow progress in Visibility; saved answers will appear here.' : <>Read the exact answers, compare how your brand appears and inspect every source link.<br /><button className="primary" onClick={() => canMeasure ? setJobDialog('measure') : openConnections()}>{canMeasure ? 'Start visibility check' : 'Connect an answer provider'}</button></>}
                     </Empty>
                   )}
                 </section>
               )}
               {page === "Sources" && (
-                <SourcesTable presentation={w.presentation} collected={w.metrics.completed} evidence={openEvidence} projectId={p!.id} ownDomain={p!.domain} />
+                <SourcesTable presentation={w.presentation} collected={w.metrics.completed} evidence={openEvidence} projectId={p!.id} ownDomain={p!.domain} startCheck={() => changePage('Visibility')} />
               )}
               {page === "Opportunities" && <>
                 {(analysisMeasurement || omittedSuggestions > 0) && <div className="opportunity-context">
@@ -604,7 +558,8 @@ export function App() {
                 <RunsPanel jobs={runsNeedingAttention(w.jobs, ['diagnose'])} run={run} title={pausedAnalysis ? 'Continue your saved analysis' : undefined} />
                 <section className="panel"><Findings findings={opportunities} projectId={p!.id} run={run}
                   emptyTitle={activeAnalysis ? "Your opportunities are on their way" : pausedAnalysis ? "Waiting for the analysis to finish" : "Find your next content opportunity"}
-                  emptyMessage={activeAnalysis ? "You can explore your answers while the analysis runs." : pausedAnalysis ? "Recommendations appear after all reviewed pages have been checked. Your saved answers and progress are kept." : measured && audited ? "Analyze your answers alongside your website to identify specific pages to improve. A missing mention alone is not a recommendation." : "Complete a site audit and visibility check to find improvements grounded in your evidence."}
+                  emptyMessage={activeAnalysis ? "You can explore your answers while the analysis runs." : pausedAnalysis ? "Recommendations appear after all reviewed pages have been checked. Your saved answers and progress are kept." : measured && audited ? "Analyze your answers alongside your website to identify specific pages to improve. A missing mention alone is not a recommendation." : measured ? 'Your answers are collected. Audit your pages next so recommendations can address the content already on your website.' : audited ? 'Your pages are audited. Collect AI answers next to find the gaps between your website and what customers are told.' : 'Start with a local site audit, then collect AI answers. Recommendations connect both sources of evidence to a specific improvement.'}
+                  emptyAction={!activeAnalysis && !pausedAnalysis ? <button className="primary" onClick={() => !audited ? setJobDialog('audit') : !measured ? changePage('Visibility') : canAnalyze ? setJobDialog('diagnose') : openConnections()}>{!audited ? 'Audit your site' : !measured ? 'Set up visibility' : canAnalyze ? 'Analyze your evidence' : 'Connect for analysis'}</button> : undefined}
                   jobs={w.jobs} measurementId={analysisMeasurement?.id}
                   focusedFinding={focusedFinding} onFocused={() => setFocusedFinding(null)}
                   drafts={w.content} openContent={id => navigate(() => { setPage('Content'); setSelectedContent(id); })}
@@ -624,6 +579,7 @@ export function App() {
                   <div className="panel-heading">
                     <h2>Export your work</h2>
                   </div>
+                  <div className="report-overview"><div><h3>{p!.brand}</h3><p>Your saved workspace, ready to share or back up. Reports use the current evidence; backups also preserve earlier checks and draft versions.</p></div><dl className="evidence-summary" aria-label="Current workspace evidence"><div><dt>Audited pages</dt><dd>{w.pages.length}</dd></div><div><dt>Answers in current check</dt><dd>{w.metrics.completed}</dd></div><div><dt>Improvements</dt><dd>{w.findings.length}</dd></div><div><dt>Saved drafts</dt><dd>{w.content.length}</dd></div></dl></div>
                   <div className="report-grid">
                     <div>
                       <FileText size={25} />
@@ -632,6 +588,7 @@ export function App() {
                         Download an editable report or open a print-friendly
                         version.
                       </p>
+                      <ul className="report-includes"><li>Visibility measurements and their scope</li><li>Page findings and recommended improvements</li><li>Page addresses and steps for following up</li></ul>
                       <div className="button-row">
                         <a
                           className="secondary"
@@ -658,6 +615,7 @@ export function App() {
                         Your configuration, evidence, improvements and drafts.
                         Credentials are excluded.
                       </p>
+                      <ul className="report-includes"><li>Move your project to another installation</li><li>Keep a backup before an update</li><li>Review the file before sharing private work</li></ul>
                       <a
                         className="secondary"
                         href={"/api/projects/" + p!.id + "/export"}
@@ -723,32 +681,6 @@ const descriptions: Record<string, string> = {
   Reports: "Keep, share and move your work.",
   Settings: "Manage provider connections and scheduled work.",
 };
-/** Rate changes come only from the server's same-scope comparison, never from adjacent checks. */
-function Metric({
-  title,
-  value,
-  detail,
-  points,
-  since,
-}: {
-  title: string;
-  value: string;
-  detail: string;
-  points?: number | null;
-  since?: string;
-}) {
-  const Icon = ({ "Brand mentions": MessagesSquare, "Website citations": Link, "Answers collected": Check, "Opportunities": Lightbulb, "Answers remaining": MessagesSquare } as Record<string, typeof MessagesSquare>)[title] ?? ChartColumn;
-  const change = points === undefined ? null : pointChange(points);
-  const ChangeIcon = change?.direction === "up" ? TrendingUp : change?.direction === "down" ? TrendingDown : Minus;
-  return (
-    <section className="metric">
-      <span className="metric-title">{title}<span className="metric-icon"><Icon size={16} aria-hidden="true" /></span></span>
-      <div className="metric-value"><strong className={value.length > 10 ? 'metric-text' : undefined}>{value}</strong>
-        {change && since && <span className={"metric-change " + change.direction} title={"Compared with the comparable check on " + shortDate(since)}><ChangeIcon size={13} aria-hidden="true" />{change.label}<span className="visually-hidden"> since the comparable check on {shortDate(since)}</span></span>}</div>
-      <small>{detail}</small>
-    </section>
-  );
-}
 function WorkflowRow({
   n,
   title,
@@ -846,67 +778,6 @@ function Jobs({
       ))}
     </ul>
   ) : null;
-}
-function Modal({
-  title,
-  close,
-  children,
-  dismissible = true,
-}: {
-  title: string;
-  close: () => void;
-  children: ReactNode;
-  dismissible?: boolean;
-}) {
-  const dialog = useRef<HTMLElement>(null);
-  const dismiss = useRef({ close, dismissible });
-  dismiss.current = { close, dismissible };
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    const targets = () => [...(dialog.current?.querySelectorAll<HTMLElement>(
-      "button,input,textarea,a[href],[tabindex]",
-    ) ?? [])].filter((element) => !element.hasAttribute("disabled") && element.tabIndex >= 0 && element.getClientRects().length > 0);
-    targets()[0]?.focus();
-    const listener = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && dismiss.current.dismissible) dismiss.current.close();
-      if (e.key === "Tab") {
-        const items = targets();
-        const first = items[0],
-          last = items.at(-1);
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last?.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first?.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", listener);
-    return () => {
-      document.removeEventListener("keydown", listener);
-      previous?.focus();
-    };
-  }, []);
-  return (
-    <div className="modal-backdrop">
-      <section
-        ref={dialog}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <div className="panel-heading">
-          <h2>{title}</h2>
-          <button aria-label="Close dialog" onClick={close} disabled={!dismissible}>
-            <X size={18} />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
 }
 function ProjectSettings({ project, run }: { project: Project; run: (action: () => Promise<unknown>) => Promise<void> }) {
   const [saving, setSaving] = useState(false), [message, setMessage] = useState("");

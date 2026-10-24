@@ -4,7 +4,7 @@ You can run your first website audit without signing into an AI service. Add a c
 
 ## 1. Install and add your website
 
-[Download the app for Windows or Mac](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.2), then follow the [installation guide](distribution.md). Source and Docker users can open their local instance at <http://localhost:4318>.
+[Download the app for Windows or Mac](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.3), then follow the [installation guide](distribution.md). Source and Docker users can open their local instance at <http://localhost:4318>.
 
 In setup, enter your website and brand name. Choose **Use local audits only** to try the audit first, or connect an eligible service. Review the optional usage-sharing checkbox before finishing setup.
 

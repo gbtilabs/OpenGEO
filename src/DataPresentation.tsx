@@ -28,6 +28,8 @@ import {
   collectionLabel,
 } from "./provider-ui";
 import "./analytics.css";
+import { Dialog } from './ui/Dialog';
+import { EmptyState } from './ui/Primitives';
 
 import { percent, shortDate as date, dateTime, usd } from "./format";
 function languageName(locale: string) {
@@ -212,6 +214,7 @@ export function VisibilityChart({
               from zero to one hundred. Missing checks are gaps.
             </title>
             <defs>{series.map(s => <linearGradient key={s.key} id={id + s.key} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style={{ stopColor: s.color }} stopOpacity=".14" /><stop offset="100%" style={{ stopColor: s.color }} stopOpacity=".015" /></linearGradient>)}</defs>
+            {history.map((point, index) => point.mentionRate === null && point.citationRate === null ? <g key={point.jobId} className="chart-missing"><rect x={x(index) - 10} y={top} width="20" height={bottom - top} fill="var(--surface-3)" /><line x1={x(index)} x2={x(index)} y1={top} y2={bottom} stroke="var(--border-strong)" strokeDasharray="3 4" /><title>{dateTime(point.at)}: incomplete check, no comparable rate</title></g> : null)}
             {[0, 25, 50, 75, 100].map((tick) => (
               <g key={tick}>
                 <line
@@ -219,7 +222,7 @@ export function VisibilityChart({
                   x2={right}
                   y1={y(tick)}
                   y2={y(tick)}
-                  stroke="#e2e8f0"
+                  stroke="var(--border)"
                 />
                 <text x={left - 10} y={y(tick) + 4} textAnchor="end">
                   {tick}%
@@ -305,7 +308,7 @@ export function VisibilityChart({
           <p className="chart-note">
             {history.length === 1
               ? "One check so far; recheck to see a trend."
-              : "Comparable checks only. Gaps show incomplete checks."}
+              : history.some(point => point.mentionRate === null || point.citationRate === null) ? "Comparable checks only. Shaded gaps mark incomplete checks, not a fall to zero." : "Comparable checks only. Select a point to see its results."}
           </p>
           <details className="chart-data">
             <summary>
@@ -373,6 +376,7 @@ export function SourcesTable({
   openSources,
   projectId,
   ownDomain,
+  startCheck,
 }: {
   presentation: Presentation;
   collected: number;
@@ -381,6 +385,7 @@ export function SourcesTable({
   openSources?: () => void;
   projectId: string;
   ownDomain: string;
+  startCheck?: () => void;
 }) {
   const [mode, setMode] = useState<"domains" | "pages">("domains"),
     [search, setSearch] = useState("");
@@ -398,6 +403,7 @@ export function SourcesTable({
           </button>
         )}
       </div>
+      {!compact && collected > 0 && <dl className="evidence-summary" aria-label="Citation summary"><div><dt>Cited websites</dt><dd>{presentation.domains.length}</dd></div><div><dt>Linked pages</dt><dd>{presentation.pages.length}</dd></div><div><dt>Answers inspected</dt><dd>{collected}</dd></div></dl>}
       {!compact && (
         <div className="analytics-toolbar">
           <div
@@ -462,14 +468,7 @@ export function SourcesTable({
           </table>
         </div>
       ) : (
-        <div className="analytics-empty">
-          <p>{search ? "No matching sources" : "No citation links yet"}</p>
-          <span>
-            {search
-              ? "Try another search."
-              : "Sources appear when collected answers include verifiable links."}
-          </span>
-        </div>
+        <EmptyState icon={Link} title={search ? 'No matching sources' : collected ? 'These answers did not include source links' : 'See which websites AI cites'} action={search ? <button className="secondary" onClick={() => setSearch('')}>Clear search</button> : !collected && startCheck ? <button className="primary" onClick={startCheck}>Set up a visibility check</button> : undefined}>{search ? 'Search by website name or page address.' : collected ? 'The collected answers are still available in Responses. An answer without links does not establish that a website was never used.' : 'Collect answers to your customer questions. This view groups their source links by website and page, with a route back to each answer.'}</EmptyState>
       )}
       {shown.length > 0 && (
         <p className="chart-note table-note">
@@ -682,6 +681,7 @@ export function CheckHistory({ jobs, currentId, recheck, note }: {
 }
 
 export function AnswerCard({ observation: o }: { observation: Observation }) {
+  const [open, setOpen] = useState(false);
   const sources = o.citations.filter((c) => targetDomain(c.url));
   const domains = [...new Set(sources.map((c) => targetDomain(c.url)!))];
   return (
@@ -701,12 +701,12 @@ export function AnswerCard({ observation: o }: { observation: Observation }) {
         {domains.length > 0 && <span className="source-stack" aria-label={sources.length + " source links"}>{domains.slice(0, 4).map((domain) => <SiteIcon key={domain} projectId={o.projectId} domain={domain} size={18} />)}<span>{sources.length} {sources.length === 1 ? "source" : "sources"}</span></span>}
         {!domains.length && <span>No source links</span>}
       </div>
-      <details className="answer-detail">
-        <summary>
-          Read full answer and sources <ChevronDown size={14} />
-        </summary>
-        <div className="document-preview answer-document" lang={o.locale} dir={['ar', 'fa', 'he', 'ur'].includes(o.locale.split('-')[0]) ? 'rtl' : 'ltr'} dangerouslySetInnerHTML={{ __html: markdownHtml(o.answer) }} />
-        {sources.length > 0 && <h4>Sources in this answer</h4>}
+      <button className="text-button answer-open" onClick={() => setOpen(true)}>Read full answer and sources <ArrowRight size={14} /></button>
+      {open && <Dialog title="Answer and sources" close={() => setOpen(false)} variant="drawer"><div className="answer-reader">
+        <div className="answer-reader-heading"><span><ProviderIcon provider={o.platform} size={20} />{platformLabel(o.platform)}<time dateTime={o.observedAt}>{dateTime(o.observedAt)}</time></span><h3>{o.prompt}</h3><p>{o.cited ? 'This answer links to your website.' : o.mentioned ? 'This answer names your brand without linking to your website.' : 'Your brand was not detected in this answer.'}</p></div>
+        <div className="answer-reader-grid"><div className="document-preview answer-document" lang={o.locale} dir={['ar', 'fa', 'he', 'ur'].includes(o.locale.split('-')[0]) ? 'rtl' : 'ltr'} dangerouslySetInnerHTML={{ __html: markdownHtml(o.answer) }} />
+        <aside className="answer-source-rail" aria-label="Sources in this answer"><h4>Sources <span>{sources.length}</span></h4>
+        {!sources.length && <p>This answer contains no source links. Its claims still need independent verification.</p>}
         <ul className="answer-sources">
           {sources.map((c, index) => (
             <li key={index}>
@@ -717,9 +717,9 @@ export function AnswerCard({ observation: o }: { observation: Observation }) {
               </a>
             </li>
           ))}
-        </ul>
+        </ul></aside></div>
         <p className="answer-provenance">{collectionLabel(o)}. {retrievalLabel(o)}. Model: {o.model}.</p>
-      </details>
+      </div></Dialog>}
     </article>
   );
 }
@@ -762,7 +762,7 @@ export function AnswerDistribution({
             cy="88"
             r="66"
             fill="none"
-            stroke="#edf2f7"
+            stroke="var(--surface-3)"
             strokeWidth="16"
           />
           {presentation.outcomes.map((group) => {

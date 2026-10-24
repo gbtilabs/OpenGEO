@@ -36,6 +36,17 @@ try {
   assert.equal(await dialog.getByRole("button", { name: "Start visibility check", exact: true }).isDisabled(), true);
   await dialog.getByRole("button", { name: "Retry availability check", exact: true }).click();
   await dialog.getByRole("button", { name: "Start visibility check", exact: true }).waitFor({ state: "visible" });
+  // Native dialogs make the background inert; their dropdowns must share that top layer.
+  await dialog.getByRole('button', { name: 'Answer platform', exact: true }).click();
+  await dialog.getByRole('option', { name: 'ChatGPT', exact: true }).click();
+  assert.equal(await dialog.getByRole('listbox').count(), 0);
+  await dialog.getByRole('button', { name: 'Answer platform', exact: true }).click();
+  await page.keyboard.press('Escape');
+  assert.equal(await dialog.count(), 1, 'Escape closes the dropdown before its dialog');
+  assert.equal(await dialog.getByRole('listbox').count(), 0);
+  await dialog.getByRole('button', { name: 'Close dialog', exact: true }).focus();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await dialog.evaluate(element => element.contains(document.activeElement)), true, 'Focus stays inside the modal');
   await dialog.getByLabel("Approved run budget (USD)").fill("10001");
   await dialog.getByRole("button", { name: "Start visibility check", exact: true }).click();
   await dialog.getByText("Review the highlighted fields.", { exact: true }).waitFor();

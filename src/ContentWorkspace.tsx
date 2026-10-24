@@ -8,6 +8,7 @@ import { contentHistory } from './content-history';
 import { Select } from './Select';
 import './content.css';
 import { dateTime } from './format';
+import { EmptyState } from './ui/Primitives';
 
 type Draft = {
   id: string; topic: string; markdown: string; brief: string; createdAt: string;
@@ -18,16 +19,21 @@ type Draft = {
 };
 type Edit = { id: string; markdown: string; baseMarkdown: string; recoverySession: string };
 
+function needsReview(draft: Draft) {
+  return draft.reviewCurrent === false || !!draft.review?.issues?.length || draft.review?.coverageComplete === false || !draft.review;
+}
+
 export function ContentWorkspace({ drafts, selected, select, projectId, run, revise, onDraftChange, create, pending }: {
   drafts: Draft[]; selected: string; select: (id: string) => void; projectId: string;
   run: (action: () => Promise<unknown>) => Promise<void>; revise: (draft: Draft) => void;
   onDraftChange: (edit: Edit | null) => void; create: () => void; pending: boolean;
 }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(''), [reviewFilter, setReviewFilter] = useState(false);
   const draft = drafts.find(item => item.id === selected);
   const library = contentHistory(drafts);
   const versions = library.find(group => group.some(item => item.id === draft?.id)) ?? [];
-  const shown = library.filter(group => group.some(item => item.topic.toLowerCase().includes(query.toLowerCase())));
+  const reviewCount = library.filter(group => needsReview(group[0])).length;
+  const shown = library.filter(group => (!reviewFilter || needsReview(group[0])) && group.some(item => item.topic.toLowerCase().includes(query.toLowerCase())));
   if (!drafts.length) return <section className="panel content-empty">
     <div className="content-illustration" aria-hidden="true"><FileText size={82} strokeWidth={1} /><FilePenLine size={38} strokeWidth={1.5} /></div>
     <h2>{pending ? 'Your draft is on its way' : 'Create your first content draft'}</h2>
@@ -37,18 +43,19 @@ export function ContentWorkspace({ drafts, selected, select, projectId, run, rev
   </section>;
   if (!draft) return <section className="panel draft-library" aria-label="Draft library">
       <div className="draft-library-heading"><h2>Your drafts <span>{library.length}</span></h2><button className="icon-button" aria-label="Create a draft" onClick={create}><Plus size={17} /></button></div>
+      <div className="draft-library-summary"><p>Keep the brief, sources and revision history together. Open a draft to review its claims before publishing.</p><div className="filter-chips" role="group" aria-label="Filter draft review"><button aria-pressed={!reviewFilter} onClick={() => setReviewFilter(false)}>All drafts <span>{library.length}</span></button><button aria-pressed={reviewFilter} onClick={() => setReviewFilter(true)}>Needs review <span>{reviewCount}</span></button></div></div>
       <label className="search"><Search size={15} /><input aria-label="Search drafts" placeholder="Find a draft" value={query} onChange={event => setQuery(event.target.value)} /></label>
       <div className="draft-list-heading" aria-hidden="true"><span>Content</span><span>Type</span><span>Review</span><span>Updated</span><span /></div>
       <div className="draft-list">{shown.map(group => {
-        const item = group[0], needsReview = item.reviewCurrent === false || item.review?.issues?.length || item.review?.coverageComplete === false || !item.review;
+        const item = group[0], reviewNeeded = needsReview(item);
         return <button key={item.id} className="draft-card" aria-label={'Open draft: ' + item.topic} onClick={() => select(item.id)}>
           <span className="draft-list-title"><span className="draft-file-icon">{item.task?.mode === 'page_update' ? <FilePenLine size={21} /> : <FileText size={21} />}</span><span><strong>{item.topic}</strong>{item.task?.targetUrl && <small>{targetDomain(item.task.targetUrl)}</small>}{group.length > 1 && <small className="draft-version-count"><History size={12} />{group.length} versions</small>}</span></span>
           <span className="draft-type">{item.task?.mode === 'page_update' ? 'Page update' : 'Article'}</span>
-          <span className={'draft-state' + (needsReview ? ' needs-review' : '')}>{item.reviewCurrent === false ? 'Review outdated' : needsReview ? 'Needs review' : 'Draft'}</span>
+          <span className={'draft-state' + (reviewNeeded ? ' needs-review' : '')}>{item.reviewCurrent === false ? 'Review outdated' : reviewNeeded ? 'Needs review' : 'Draft'}</span>
           <time dateTime={item.createdAt}>{dateTime(item.createdAt)}</time><ArrowRight size={17} />
         </button>;
       })}</div>
-      {!shown.length && <p className="small">No matching drafts.</p>}
+      {!shown.length && <EmptyState icon={Search} title={reviewFilter && !query ? 'No drafts waiting for review' : 'No matching drafts'} action={<button className="secondary" onClick={() => { setQuery(''); setReviewFilter(false); }}>Show all drafts</button>}>{reviewFilter && !query ? 'Your latest drafts have no outstanding review flags. Read the final copy and sources before publishing.' : 'Try another topic or clear your filters.'}</EmptyState>}
   </section>;
   return <section className="panel content-workspace" aria-label="Content workspace">
     <div className="draft-document-toolbar"><button className="secondary compact" onClick={() => select('')}><ArrowLeft size={15} />All drafts</button><span>{draft.task?.mode === 'page_update' ? 'Page update' : 'Article'}</span></div>
