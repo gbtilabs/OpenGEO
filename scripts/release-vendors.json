@@ -1,19 +1,19 @@
 {
   "windows-x64": [
-    ["electron", "https://github.com/electron/electron/releases/download/v44.5.1/electron-v44.5.1-win32-x64.zip", "9b382492dcfee91f8f9e92c91f7972550a1b95d2299cac72279dab33a600d7db"],
+    ["electron", "https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-win32-x64.zip", "41a1ffa0541cb0f2c9b9fe920dd2cef1793ad0ea2ada1a9582958880f4d1b23c"],
     ["chromium-1243", "https://cdn.playwright.dev/builds/cft/153.0.8010.12/win64/chrome-win64.zip", "415968b02065d4a9e2c10b85f0ae9f489b8fba500e94d9d0a7b7c4852a7234c1"],
     ["chromium_headless_shell-1243", "https://cdn.playwright.dev/builds/cft/153.0.8010.12/win64/chrome-headless-shell-win64.zip", "7aec872f3090e639c4237467624ea863c20fe2878914c93a6556bdbb52aa6c4c"],
     ["ffmpeg-1011", "https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-win64.zip", "8d08827c019ad36e7b9d49d3648447d884534cb2acf200e71c715f6dd834cc50"],
     ["winldd-1007", "https://cdn.playwright.dev/dbazure/download/playwright/builds/winldd/1007/winldd-win64.zip", "0069f0d11d4ad6df068a068c003d22fe7dbec192a47bba64b2e115e9c8ce41d8"]
   ],
   "macos-arm64": [
-    ["electron", "https://github.com/electron/electron/releases/download/v44.5.1/electron-v44.5.1-darwin-arm64.zip", "1d75703019bb16461ae65f3081d7e6f5c0b11e901d0ccb5c343bcf7bcdd6435c"],
+    ["electron", "https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-darwin-arm64.zip", "4af51382278d00291dfcda265eddd9bab6e98cebb09f46aadc8438bf606de162"],
     ["chromium-1243", "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-mac-arm64.zip", "930e2a2c15addbaca1fe9b07bfa520667bced556d7988707186819cb4279ef3b"],
     ["chromium_headless_shell-1243", "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip", "89d80a6d26ccd0ccfd51e22d9e1297283862af2b0cd91dce07459b35ca0059f2"],
     ["ffmpeg-1011", "https://cdn.playwright.dev/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip", "7d77eb0d44b59acc4065faa2476c0df1a242cc904c346f820626818c953c5277"]
   ],
   "macos-x64": [
-    ["electron", "https://github.com/electron/electron/releases/download/v44.5.1/electron-v44.5.1-darwin-x64.zip", "e567d13833d0e161d7749727355b98643461df3395b537cfa7bdddf8a8bfedff"],
+    ["electron", "https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-darwin-x64.zip", "451363b59bb7d2c1c9e0c4baa99106004eaabe724aa21a0c6b4c87469293531a"],
     ["chromium-1243", "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-x64/chrome-mac-x64.zip", "4e12e2b8a297a2eb79c16258e46961c73f8aa2fa6be6b1d3cdbb553fb5d4ef1c"],
     ["chromium_headless_shell-1243", "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-x64/chrome-headless-shell-mac-x64.zip", "5c2eaa1aad62111bb5a70dd0889dd3093f3142277b8f78957a238257ee85f009"],
     ["ffmpeg-1011", "https://cdn.playwright.dev/builds/ffmpeg/1011/ffmpeg-mac.zip", "17ed15a2fa60d3c74181befcb2bdf7c9bb288d19b2a3b9893b94b63f2ce260e4"]
