@@ -18,6 +18,8 @@ if ($Attach) {
     }
     if (-not $process) { throw 'The updater did not start its verified installer.' }
 } else { $process = [Diagnostics.Process]::Start($Installer, '/currentuser /D=' + $Installation) }
+# Keep the attached process handle alive so its exit status remains available.
+$null = $process.Handle
 $deadline = [DateTime]::UtcNow.AddSeconds(180)
 $finishVerified = $false
 $observed = @()

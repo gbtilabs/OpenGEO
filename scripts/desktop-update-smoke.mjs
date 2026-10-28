@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { basename, dirname, relative, resolve, isAbsolute, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { once } from 'node:events';
 
 if (process.env.GITHUB_ACTIONS !== 'true' || process.platform !== 'win32') throw new Error('Requires an isolated Windows release runner.');
 const [executable, installer, profile, receipt] = process.argv.slice(2).map(value => resolve(value));
@@ -58,13 +59,18 @@ try {
   await page.evaluate(() => window.opengeoDesktop.setDraftProtectionPending(true));
   assert.match((await page.evaluate(() => window.opengeoDesktop.updates('install'))).message, /Save your changes/);
   await page.evaluate(() => window.opengeoDesktop.setDraftProtectionPending(false));
-  const closed = application.waitForEvent('close', { timeout: 30000 });
-  await page.evaluate(() => { void window.opengeoDesktop.updates('install'); });
-  await closed;
+  // The installer can inherit output handles. Process exit proves shutdown without
+  // waiting for stream closure, which cannot happen until its Finish screen closes.
+  const exited = once(application.process(), 'exit', { signal: AbortSignal.timeout(30000) });
+  await page.evaluate(() => { setTimeout(() => void window.opengeoDesktop.updates('install'), 100); });
+  const [exitCode, exitSignal] = await exited;
+  assert.equal(exitCode, 0); assert.equal(exitSignal, null);
   application = null;
   await promisify(execFile)('pwsh', ['-NoProfile', '-File', 'scripts/verify-installer-finish.ps1', '-Installer', downloaded, '-Installation', dirname(executable), '-Receipt', receipt + '.finish.json', '-Attach'], { windowsHide: true, timeout: 240000 });
   writeFileSync(receipt, JSON.stringify({ packagedUpdateDownload: true, downloadSha512: sha512, completeDownloads, explicitInstallRequired: true, unsavedWorkBlockedInstall: true, actualInstallerCompleted: true, transport: 'isolated loopback feed serving the exact candidate', comparisonVersion: '0.0.0', relaunchedBySeparateWorkspaceVerification: true }, null, 2));
 } finally {
-  await application?.close();
+  // Failed verification must not hang cleanup on the same inherited installer handles.
+  if (application?.process().exitCode === null) application.process().kill();
+  server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));
 }
