@@ -7,7 +7,7 @@ const directory = mkdtempSync(join(tmpdir(), "opengeo-ux-runtime-"));
 const output = join(process.env.LOCALAPPDATA ?? tmpdir(), "OpenGEO", "ux-review");
 mkdirSync(output, { recursive: true });
 const runtime = await start({ directory, port: 0, protector: { encrypt: (text) => Buffer.from(text), decrypt: (bytes) => bytes.toString() } });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...(process.env.OPENGEO_TEST_BROWSER ? { executablePath: process.env.OPENGEO_TEST_BROWSER } : { channel: 'chrome' }), headless: true });
 try {
   runtime.scheduler.stop(); await runtime.runner.stop();
   const page = await browser.newPage({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: 2 });
@@ -17,12 +17,12 @@ try {
   await page.screenshot({ path: join(output, "after-first-launch.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 780 });
   await page.screenshot({ path: join(output, "after-first-launch-mobile.png"), fullPage: true });
-  await page.getByRole("button", { name: "Use local audits only", exact: true }).click();
+  await page.getByRole("button", { name: "Continue without AI", exact: true }).click();
   await page.getByRole("textbox", { name: "Website", exact: true }).fill("example.com");
   await page.getByRole("textbox", { name: "Brand name", exact: true }).fill("Example Domain");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.screenshot({ path: join(output, "after-setup-review-mobile.png"), fullPage: true });
-  await page.getByRole("button", { name: "Open workspace & audit", exact: true }).click();
+  await page.getByRole("button", { name: "Check website health", exact: true }).click();
   await page.getByRole("heading", { name: "Overview", exact: true }).waitFor();
   await runtime.runner.tick();
   await page.getByRole("button", { name: "Refresh workspace", exact: true }).click();

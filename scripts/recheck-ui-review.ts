@@ -34,14 +34,16 @@ try {
   await page.getByRole('button', { name: 'Recheck', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Recheck AI visibility', exact: true });
   await dialog.getByRole('button', { name: 'Model', exact: true }).getByText('previous-model', { exact: true }).waitFor();
-  assert.equal(await dialog.getByRole('checkbox', { name: /Search the web for this check/ }).isChecked(), false);
+  assert.equal(await dialog.getByRole('checkbox', { name: /Search the web for this check/ }).count(), 0);
+  await dialog.getByText('Different answer settings start a separate comparison.', { exact: true }).waitFor();
   await dialog.getByRole('button', { name: 'Recheck visibility', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   const accepted = runtime.store.jobs(project.id).find(job => job.kind === 'recheck')!;
   assert.equal(accepted.provider, baseline.provider);
   assert.equal(accepted.model, baseline.model);
   assert.equal(accepted.platform, baseline.platform);
-  assert.equal(accepted.webSearch, baseline.webSearch);
+  assert.equal(accepted.webSearch, true);
+  assert.notEqual(accepted.webSearch, baseline.webSearch, 'New checks use web search rather than silently repeating legacy model-only collection');
   assert.equal(accepted.maxCostUsd, 0);
   await page.locator('.metric').filter({ hasText: 'Answers remaining' }).getByText('Starting', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Recheck', exact: true }).isDisabled(), true);
@@ -67,7 +69,7 @@ try {
   assert.equal(await dialog.getByRole('button', { name: 'Recheck visibility', exact: true }).isDisabled(), true);
   assert.equal(runtime.store.jobs(project.id).filter(job => job.kind === 'recheck').length, 1);
   assert.deepEqual(errors, []);
-  console.log('Browser verified: previous model and retrieval settings retained, unavailable models require explicit choice, no silent provider fallback, queued checks do not relabel previous results. No inference or paid provider requests.');
+  console.log('Browser verified: previous model retained, web search required with an explicit separate-comparison notice for a legacy model-only baseline, unavailable models require explicit choice, no silent provider fallback, queued checks do not relabel previous results. No inference or paid provider requests.');
 } finally {
   globalThis.fetch = originalFetch;
   await browser.close(); await runtime.app.close();
