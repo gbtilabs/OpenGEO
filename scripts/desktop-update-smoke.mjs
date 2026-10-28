@@ -42,7 +42,7 @@ try {
     const require = process.mainModule.require.bind(process.mainModule);
     const updater = require('electron-updater').autoUpdater;
     updater.setFeedURL({ provider: 'generic', url, channel: 'beta' });
-    updater.currentVersion = new (require('semver').SemVer)('0.0.0');
+    updater.currentVersion = new updater.currentVersion.constructor('0.0.0');
     Object.defineProperty(updater.app, 'baseCachePath', { value: cache });
     if (!app.isPackaged) throw new Error('Must use packaged application');
   }, { url: 'http://127.0.0.1:' + server.address().port, cache: join(dirname(receipt), 'update-cache') });
