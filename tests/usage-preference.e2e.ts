@@ -30,7 +30,7 @@ test("setup waits for the actual privacy preference to load and save before comp
     const page = await browser.newPage();
     const origin = "http://127.0.0.1:" + address.port;
     await page.goto(origin);
-    await page.getByRole("button", { name: "Use local audits only", exact: true }).click();
+    await page.getByRole("button", { name: "Continue without AI", exact: true }).click();
     await page.getByRole("textbox", { name: "Website", exact: true }).fill("example.com");
     await page.getByRole("textbox", { name: "Brand name", exact: true }).fill("Example Domain");
     let held: Route | undefined;
@@ -44,7 +44,7 @@ test("setup waits for the actual privacy preference to load and save before comp
     await page.route("**/api/settings/usage-sharing", delayed);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await expect.poll(() => held?.request().method()).toBe("GET");
-    const finish = page.getByRole("button", { name: "Open workspace & audit", exact: true });
+    const finish = page.getByRole("button", { name: "Check website health", exact: true });
     await expect(finish).toBeDisabled();
     release!();
     await expect(finish).toBeEnabled();

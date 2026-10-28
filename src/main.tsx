@@ -5,6 +5,8 @@ import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "./styles.css";
 import "./workspace.css";
+import "./journey.css";
+import "./ui/layout.css";
 import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
 import identity from "../brand/identity.json";

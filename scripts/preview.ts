@@ -14,7 +14,7 @@ mkdirSync(output,{recursive:true});
 writeFileSync(join(directory,'secret'),randomBytes(48));
 process.env.OPENGEO_SECRET_FILE=join(directory,'secret');
 const runtime=await start({directory,port:0});
-const browser=await chromium.launch({channel:'chrome',headless:true});
+const browser=await chromium.launch({...(process.env.OPENGEO_TEST_BROWSER ? {executablePath:process.env.OPENGEO_TEST_BROWSER} : {channel:'chrome'}),headless:true});
 try{
  await runtime.runner.stop();runtime.scheduler.stop();
  const project=runtime.store.createProject(projectInput.parse({domain:'example.com',brand:'Example Domain'}));
@@ -38,7 +38,7 @@ try{
   await sharp(file).resize({width:2040}).webp({quality:76}).toFile('assets/'+name+'.webp');
  }
  await capture('workspace-preview');
- await page.getByRole('button',{name:'Site Audit',exact:true}).click();
+ await page.getByRole('button',{name:'Scans',exact:true}).click();
  await page.getByRole('link',{name:/Example Domain/}).first().waitFor();
  await capture('audit-preview');
  await page.getByRole('button',{name:'Settings',exact:true}).click();

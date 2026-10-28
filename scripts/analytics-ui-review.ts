@@ -200,13 +200,15 @@ try {
     for (const view of [
       "Overview",
       "Visibility",
+      "Prompts",
       "Responses",
       "Sources",
       "Competitors",
-      "Site Audit",
+      "Scans",
       "Opportunities",
       "Content",
       "Reports",
+      "Brand",
       "Settings",
     ]) {
       await navigate(page, view);
@@ -258,6 +260,13 @@ try {
           ),
         false,
       );
+      assert.deepEqual(await page.locator('.page-heading').evaluateAll(headings => headings.flatMap(heading => {
+        const bounds = heading.getBoundingClientRect();
+        return [...heading.children].filter(child => {
+          const rect = child.getBoundingClientRect();
+          return rect.left < bounds.left - 1 || rect.right > bounds.right + 1;
+        }).map(child => child.textContent);
+      })), [], `${view} header contents must fit at ${width}px`);
       await page.screenshot({
         path: join(output, `${view.toLowerCase()}-${width}.png`),
         fullPage: view === "Overview",
@@ -407,8 +416,9 @@ try {
       .count(),
     0,
   );
+  await navigate(page, "Prompts");
   await page
-    .getByRole("button", { name: "Edit questions", exact: true })
+    .getByRole("button", { name: "Add or edit prompts", exact: true })
     .click();
   await page
     .getByRole("textbox", { name: "Question 1", exact: true })
@@ -420,8 +430,8 @@ try {
   const editedQuestion = "Synthetic review: find useful documentation examples";
   await page.getByRole("textbox", { name: "Question 1", exact: true }).fill(editedQuestion);
   await page.getByRole("checkbox", { name: "Include question 4", exact: true }).uncheck();
-  await page.getByRole("button", { name: "Save questions", exact: true }).click();
-  await page.getByText("Questions and website details saved.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Save prompts", exact: true }).click();
+  await page.getByText("Prompts saved. Your next visibility check will use this list.", { exact: true }).waitFor();
   assert.deepEqual(runtime.store.project(project.id).prompts, [
     editedQuestion,
     prompts[1],
@@ -471,7 +481,7 @@ try {
   runtime.store.put('finding', project.id, diagnosis.id, finding);
   runtime.store.put('finding', project.id, audit.id, { ...finding, id: randomUUID(), jobId: audit.id, title: 'Synthetic heading check', kind: 'heading' });
   await page.getByRole('button', { name: 'Refresh workspace', exact: true }).click();
-  await navigate(page, 'Site Audit');
+  await navigate(page, 'Scans');
   await page.getByRole('textbox', { name: 'Search audited pages' }).fill('does-not-exist');
   await page.getByRole('heading', { name: 'No matching pages', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Show all pages', exact: true }).click();
@@ -482,10 +492,10 @@ try {
   await page.getByRole('button', { name: 'Show all pages', exact: true }).click();
   for (const width of [1360, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const view of ['Site Audit', 'Opportunities', 'Content']) {
+    for (const view of ['Scans', 'Opportunities', 'Content']) {
       await navigate(page, view);
       if (view === 'Opportunities') await page.locator('.improvement-group > summary').getByText(finding.title, { exact: true }).waitFor();
-      if (view === 'Site Audit') await page.getByText('Synthetic heading check', { exact: true }).waitFor();
+      if (view === 'Scans') await page.getByText('Synthetic heading check', { exact: true }).waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${view} populated at ${width}px`);
       await page.screenshot({ path: join(output, `${view.toLowerCase()}-loaded-${width}.png`) });
     }
@@ -497,7 +507,7 @@ try {
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole('button', { name: width === 1360 ? 'Website' : 'Mobile website', exact: true }).click();
     await page.getByRole('option', { name: /example.org/ }).click();
-    for (const view of ['Overview', 'Visibility', 'Responses', 'Sources', 'Competitors', 'Site Audit', 'Opportunities', 'Content', 'Reports']) {
+    for (const view of ['Overview', 'Visibility', 'Responses', 'Sources', 'Competitors', 'Scans', 'Opportunities', 'Content', 'Reports']) {
       await navigate(page, view);
       await page.getByRole('heading', { name: view, exact: true }).waitFor();
       await page.locator('.workspace-loading').waitFor({ state: 'hidden' });
@@ -509,12 +519,12 @@ try {
   console.log(
     JSON.stringify({
       output,
-      viewportChecks: 30,
+      viewportChecks: 36,
       populatedViewportChecks: 6,
       emptyViewportChecks: 18,
       settingsTabChecks: 9,
       tests:
-        "all ten screens, populated audit/opportunities/content, optional measurement details, outcome filters, comparison settings preservation, gaps, zero values, deduplication, source grouping/search/drill-down, question drill-down, keyboard answer drawer/chart, editable questions, empty history and unsaved-draft persistence",
+        "all twelve screens, populated audit/opportunities/content, optional measurement details, outcome filters, comparison settings preservation, gaps, zero values, deduplication, source grouping/search/drill-down, question drill-down, keyboard answer drawer/chart, editable questions, empty history and unsaved-draft persistence",
       providerRequests: 0,
       rendererErrors: failures.length,
     }),

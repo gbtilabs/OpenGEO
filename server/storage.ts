@@ -72,6 +72,47 @@ export class Store {
       .run(JSON.stringify(p), id);
     return p;
   }
+  /** Active work keeps provider receipts until the user has stopped and reconciled it. */
+  deleteProject(id: string, confirmation: string) {
+    return this.db.transaction(() => {
+      const project = this.project(id);
+      if (confirmation !== project.domain)
+        throw new ProviderError("confirmation", "Type the website address exactly to delete this brand.");
+      const jobs = this.jobs(id);
+      if (jobs.some(job => ["queued", "running", "paused"].includes(job.status) || job.error === "cancel_remote"))
+        throw new ProviderError("in_progress", "Stop or resolve this brand's unfinished scans before deleting it.");
+      const ids = new Set(jobs.map(job => job.id));
+      const schedules = this.setting<{ id: string; job: { projectId: string } }[]>("schedules", []);
+      const removedSchedules = new Set(schedules.filter(row => row.job.projectId === id).map(row => row.id));
+      this.set("schedules", schedules.filter(row => row.job.projectId !== id));
+      const runs = this.setting<Record<string, string[]>>("scheduleRuns", {});
+      const approvals = this.setting<Record<string, number>>("scheduleBudgetApprovals", {});
+      for (const key of Object.keys(runs)) {
+        runs[key] = runs[key].filter(jobId => !ids.has(jobId));
+        if (!runs[key].length || [...removedSchedules].some(schedule => key.startsWith(schedule + ":"))) {
+          delete runs[key]; delete approvals[key];
+        }
+      }
+      this.set("scheduleRuns", runs);
+      for (const key of Object.keys(approvals)) {
+        if ([...removedSchedules].some(schedule => key.startsWith(schedule + ":"))) delete approvals[key];
+      }
+      this.set("scheduleBudgetApprovals", approvals);
+      // Idempotency receipts contain the original brand input and must follow its deletion.
+      for (const row of this.db.prepare("SELECT key, body FROM settings WHERE key GLOB 'scheduleRequest:*'").all() as { key: string; body: string }[]) {
+        const receipt = JSON.parse(row.body);
+        if (receipt.input?.job?.projectId === id || removedSchedules.has(receipt.id))
+          this.db.prepare("DELETE FROM settings WHERE key=?").run(row.key);
+      }
+      if (this.setting<{ projectId?: string } | null>("setupDraft", null)?.projectId === id) this.set("setupDraft", null);
+      this.db.prepare("DELETE FROM content_recovery WHERE project_id=?").run(id);
+      this.db.prepare("DELETE FROM artifacts WHERE project_id=?").run(id);
+      this.db.prepare("DELETE FROM steps WHERE job_id IN (SELECT id FROM jobs WHERE project_id=?)").run(id);
+      this.db.prepare("DELETE FROM jobs WHERE project_id=?").run(id);
+      this.db.prepare("DELETE FROM projects WHERE id=?").run(id);
+      return { deleted: true };
+    })();
+  }
   jobs(projectId?: string): Job[] {
     return this.db
       .prepare(

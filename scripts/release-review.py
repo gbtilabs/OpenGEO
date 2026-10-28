@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import urllib.request
 from release_files import api, digest, download_asset, extract_bundle, git, inventory, review_release, upload, verify_bundle_inventory
+from release_updates import update_feeds
 
 TARGETS = ['windows-x64', 'macos-arm64', 'macos-x64']
 source = os.environ.get('REVIEW_SOURCE', '')
@@ -134,6 +135,15 @@ def audit():
     record = json.loads((unpacked / 'candidate.json').read_text())
     assert record['source'] == source and record['runId'] == run and record['target'] == target
     assert record['freshInstalledWorkflow'] and record['upgradeWorkspaceAndOsEncryptedStorage'] and record['removedOwnedInstallation']
+    if target == 'windows-x64':
+        finish = record['assistedFinishScreen']
+        assert all(finish[key] is True for key in ['finishScreen', 'launchCheckbox', 'shortcutCheckbox', 'shortcutTargetVerified'])
+        assert finish['installerExit'] == 0
+        update = record['packagedAutomaticUpdate']
+        assert all(update[key] is True for key in ['packagedUpdateDownload', 'explicitInstallRequired', 'unsavedWorkBlockedInstall', 'actualInstallerCompleted', 'relaunchedBySeparateWorkspaceVerification'])
+        assert update['completeDownloads'] == 1
+        update_finish = json.loads((unpacked / 'automatic-update.json.finish.json').read_text(encoding='utf-8-sig'))
+        assert update_finish == finish
     if target.startswith('macos'):
         consent = record['macUpgradeExplicitKeychainConsent']
         assert consent['trustedDecryptClients'] == 2 and consent['explicitFixtureOwnerConsent']
@@ -223,6 +233,7 @@ def publish():
     public = release_for_tag(tag)
     assert public['draft'] and public['prerelease'] and public['target_commitish'] == source and not public['assets']
     published = []
+    update_installers = {}
     for target in TARGETS:
         approved = approval['targets'][target]
         report_path = download_asset(approved['reviewFile'], out)
@@ -245,10 +256,18 @@ def publish():
             with package.extractfile(member) as source_file, installer.open('xb') as destination:
                 shutil.copyfileobj(source_file, destination)
         assert digest(installer) == info['sha256']
+        with installer.open('rb') as stream:
+            update_installers[target] = {**info, 'sha512': base64.b64encode(hashlib.file_digest(stream, 'sha512').digest()).decode('ascii')}
         subprocess.run(['gh', 'release', 'upload', tag, str(installer), '--repo', 'surfacedby/OpenGEO'], check=True, timeout=900)
         published.append(info)
         bundle.unlink()
         installer.unlink()
+    # JSON is a YAML subset. Feeds contain only exact reviewed installer names and hashes.
+    for name, body in update_feeds(version, update_installers).items():
+        feed = out / name
+        feed.write_text(json.dumps(body, indent=2))
+        subprocess.run(['gh', 'release', 'upload', tag, str(feed), '--repo', 'surfacedby/OpenGEO'], check=True)
+        published.append({'name': name, 'bytes': feed.stat().st_size, 'sha256': digest(feed)})
     archive = out / ('OpenGEO-' + version + '-source.zip')
     subprocess.run(['git', 'archive', '--format=zip', '--prefix=OpenGEO-' + version + '/', '--output=' + str(archive), source], check=True)
     published.append({'name': archive.name, 'bytes': archive.stat().st_size, 'sha256': digest(archive)})
@@ -258,7 +277,8 @@ def publish():
                 'cryptographicBuildAttestation': False, 'windowsAuthenticodeSigned': False,
                 'macAdHocSealVerified': True, 'macDeveloperIdSigned': False, 'macNotarized': False,
                 'macUpgradeRequiresKeychainApproval': True,
-                'cleanMachineCertification': False, 'manualUpdates': True,
+                'cleanMachineCertification': False, 'manualUpdates': False,
+                'updateDelivery': {'windows': 'download-and-confirm-restart', 'mac': 'download-and-open-disk-image', 'macReplacementRequiresUser': True},
                 'verification': {'applicationRun': approval['applicationRun'], 'remoteRun': approval['remoteRun'],
                                  'freshInstallAndBeta1Upgrade': TARGETS, 'docker': ['linux-amd64', 'linux-arm64'],
                                  'unresolvedConfidentialityFindings': 0},

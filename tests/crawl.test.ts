@@ -1,9 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MockAgent } from "undici";
-import { auditFindings, crawl, parsePage } from "../server/audit.js";
+import { auditFindingPresentation, auditFindings, crawl, parsePage } from "../server/audit.js";
 import { crawlFetch, publicAgent, type CrawlPermission } from "../server/network.js";
 import { projectInput, type PageEvidence } from "../server/contracts.js";
+
+test('updated website advice preserves saved finding identity and progress', () => {
+  const project = { ...projectInput.parse({ domain: 'example.com', brand: 'Example' }), id: 'project', createdAt: '2026-10-01T00:00:00Z' };
+  const page = parsePage('https://example.com/', 200, '<title>Example</title><p>A short introduction.</p>');
+  const original = auditFindings(project, 'audit', [page]).find(item => item.kind === 'content')!;
+  assert.ok(original);
+  const saved = { ...original, title: 'Review page substance', status: 'done' as const };
+  const display = auditFindingPresentation(project, saved, page);
+  assert.equal(display.title, original.title);
+  assert.equal(display.id, saved.id);
+  assert.equal(display.status, 'done');
+  assert.deepEqual(display.evidenceIds, saved.evidenceIds);
+  assert.equal(saved.title, 'Review page substance');
+});
 
 test("an error response requires access review, not changes to its error-page content", () => {
   const project = { ...projectInput.parse({ domain: "example.com", brand: "Example" }), id: "project", createdAt: "2026-10-01T00:00:00Z" };

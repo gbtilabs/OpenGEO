@@ -1,30 +1,34 @@
 # Get started with OpenGEO
 
-You can run your first website audit without signing into an AI service. Add a connection when you want to collect AI answers or create content.
+Find out whether AI answers mention your brand, which sources they cite, and what to improve next. Connect an AI service to begin, or try a website health scan without an account.
 
 ## 1. Install and add your website
 
-[Download the app for Windows or Mac](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.3), then follow the [installation guide](distribution.md). Source and Docker users can open their local instance at <http://localhost:4318>.
+[Download the app for Windows or Mac](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.4), then follow the [installation guide](distribution.md). Source and Docker users can open their local instance at <http://localhost:4318>.
 
-In setup, enter your website and brand name. Choose **Use local audits only** to try the audit first, or connect an eligible service. Review the optional usage-sharing checkbox before finishing setup.
+In setup, enter your website and brand name, then connect an eligible service. OpenGEO can read your public pages and suggest relevant prompts. Review the suggestions and choose what to track. Paid services require a spending limit and any applicable price approval. Review the optional usage-sharing choice before finishing setup.
 
-OpenGEO reads your public pages and sitemaps, following robots.txt. It checks up to 100 pages by default; you can change the crawl budget for larger sites. A partial crawl is shown as partial coverage.
+You can also choose website health without an AI connection. OpenGEO follows robots.txt when reading public pages and sitemaps. A partial crawl is shown as partial coverage.
 
-## 2. Read your site audit
+## 2. Run a visibility check
 
-Open **Site Audit**. Review the pages fetched and the findings for titles, descriptions, headings, canonical URLs, indexing instructions and structured data. A missing description is a concrete finding, not proof that an AI service is ignoring your business.
+Open **Prompts** to edit your tracked questions or discover more suggestions. These should be questions your customers ask when looking for a business like yours. Start a visibility check from **Scans** or **Visibility**. If the brand has no prompts yet, OpenGEO takes you to prompt selection first.
 
-![A real example.com audit in OpenGEO](../assets/audit-preview.webp)
-
-The screenshots in these guides use the reserved example.com website. They contain a real page audit and no invented AI visibility measurements.
-
-## 3. Choose questions and collect answers
-
-Connect a service in **Settings > Connections**. The [connection guide](connections.md) explains the choices, costs and differences between API answers and consumer-interface answers.
-
-Use the questions your customers ask when looking for a business like yours. OpenGEO can suggest questions from the pages it has read, but you choose which ones to track. Review the wording, model, locale and any spending approval before starting a check.
+Normal visibility checks search the web. Your connected model and account must support web search; OpenGEO does not silently substitute model-only answers. Review the model, language and spending approval before starting.
 
 In **Visibility**, inspect mention and citation rates. Use **Responses** to read full answers and **Sources** to see the pages cited. A failed check is a missing observation; it does not count as an answer that failed to mention you.
+
+## 3. Check your website's health
+
+In **Scans**, choose **Website health**. Review the pages fetched and findings for titles, descriptions, headings, canonical URLs, indexing instructions and structured data. A missing description is a concrete finding, not proof that an AI service is ignoring your business. This scan is optional and does not block visibility checks.
+
+The [connection guide](connections.md) explains service choices, costs and differences between API answers and consumer-interface answers.
+
+## Manage brands and the app
+
+**Brand** contains the selected website's name, other names, language, competitors and business context. You can export a backup before deleting a brand; deletion removes its local work, not your other brands or shared connections.
+
+**Settings** is app-wide. Connections, schedules, data preferences and updates apply across brands and remain available even before you add a website.
 
 ## 4. Decide what to work on
 

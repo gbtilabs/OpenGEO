@@ -4,13 +4,13 @@ The easiest way to try OpenGEO is the desktop app. It includes the runtime and b
 
 ## Desktop downloads
 
-Download from the [official GitHub release](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.3).
+Download from the [official GitHub release](https://github.com/surfacedby/OpenGEO/releases/tag/v0.1.0-beta.4).
 
 | Computer | File |
 | --- | --- |
-| Windows x64 | `OpenGEO-0.1.0-beta.3-windows-x64.exe` |
-| Mac with an Apple M-series chip | `OpenGEO-0.1.0-beta.3-macos-arm64.dmg` |
-| Mac with an Intel processor | `OpenGEO-0.1.0-beta.3-macos-x64.dmg` |
+| Windows x64 | `OpenGEO-0.1.0-beta.4-windows-x64.exe` |
+| Mac with an Apple M-series chip | `OpenGEO-0.1.0-beta.4-macos-arm64.dmg` |
+| Mac with an Intel processor | `OpenGEO-0.1.0-beta.4-macos-x64.dmg` |
 
 This beta has no Linux desktop download. Use [Docker](#docker) or [run from source](development.md#run-from-source) instead. Store listings are optional future distribution channels.
 
@@ -21,13 +21,13 @@ Download `SHA256SUMS.txt` and `release-manifest.json` from the same release. The
 On Windows, run this in PowerShell from your Downloads folder:
 
 ```powershell
-Get-FileHash .\OpenGEO-0.1.0-beta.3-windows-x64.exe -Algorithm SHA256
+Get-FileHash .\OpenGEO-0.1.0-beta.4-windows-x64.exe -Algorithm SHA256
 ```
 
 On a Mac, run this in Terminal, using `x64` instead of `arm64` for Intel:
 
 ```sh
-shasum -a 256 ~/Downloads/OpenGEO-0.1.0-beta.3-macos-arm64.dmg
+shasum -a 256 ~/Downloads/OpenGEO-0.1.0-beta.4-macos-arm64.dmg
 ```
 
 Compare the complete result with `SHA256SUMS.txt`. A matching hash confirms you received the published file. It is not a publisher certificate or a guarantee that software is safe.
@@ -50,7 +50,11 @@ An ad hoc signature detects changes to the sealed app; it does not verify the pu
 
 ## Updates, workspace and uninstalling
 
-There is no automatic updater in this beta. Export a backup in Settings before installing a future version. Quit OpenGEO before updating; closing the window leaves it running in the tray. Cross-version migration still needs verification for each future release.
+OpenGEO checks for desktop updates while it is running. In **Settings > About**, you can check now, control automatic downloads, or stop a download on a metered connection. Downloads are checked against the release checksum. Installation always needs your confirmation, and unsaved work or unfinished scans block a restart.
+
+On Windows, choose **Install and restart** when the download is ready. On Mac, open the downloaded disk image, quit OpenGEO, and drag the new app to Applications to replace the existing copy. Mac replacement is manual while Apple signing and notarization are deferred. Older versions without the updater need one download from GitHub to get this feature.
+
+Export a backup in Settings before updating. Closing the window leaves OpenGEO running in the tray; use **Quit** before manually replacing it. Each release needs its own upgrade verification.
 
 On a Mac, an update can show a macOS dialog saying **OpenGEO wants to use your
 confidential information stored in "OpenGEO Safe Storage" in your keychain**.

@@ -24,6 +24,7 @@ import {
 } from "./contracts.js";
 import { publicUrl } from "./network.js";
 import { workspacePresentation, currentFindings } from "./presentation.js";
+import { auditFindingPresentation } from './audit.js';
 import { SiteIcons } from "./site-icons.js";
 import { displayedMeasurement } from "./portable-results.js";
 import { UsageSharing } from "./usage.js";
@@ -197,7 +198,7 @@ export async function createApp(
       throw new ProviderError("setup", "Connect both DataForSEO and OpenRouter for measurements, analysis and content.");
     // Finishing setup is one durable transaction, so an interrupted response cannot queue duplicate audits.
     return store.db.transaction(() => {
-      const job = setupAudit(project);
+      const job = draft.localOnly ? setupAudit(project) : null;
       const consent = store.setting<{ enabled: boolean } | null>("usageConsent", null);
       if (!consent && !store.setting<any>("onboarding", null)?.completed) usage.setEnabled(usage.status().enabled);
       store.set("onboarding", { completed: true });
@@ -211,7 +212,7 @@ export async function createApp(
     const project = store.project(input.projectId);
     if (!vault.status()[input.provider]) throw new ProviderError("auth", "Connect your chosen AI provider first.");
     return store.db.transaction(() => {
-      const audit = setupAudit(project);
+      const audit = setupAudit(project, 6);
       const key = createHash("sha256").update(JSON.stringify([questionDiscoveryVersion, project.domain, project.brand, project.aliases, project.locale, project.knowledge.slice(0, 4000), input.provider, input.maxCostUsd])).digest("hex");
       const active = store.jobs(project.id).find(job => job.kind === "discover" && ["queued", "running", "paused"].includes(job.status) && JSON.parse(store.step(job.id, "suggestionsContext")?.body ?? "null") === key);
       const job = active ?? store.enqueue(jobInput.parse({ ...input, kind: "discover", auditJobId: audit.id }), "setup-questions:" + project.id + ":" + key + (requestId ? ":" + requestId : ""));
@@ -237,11 +238,11 @@ export async function createApp(
     })();
   });
   /** Setup reuses an active or finished audit of this domain, so retried requests never queue a second one; an audit that did not finish is replaced rather than awaited. */
-  function setupAudit(project: import("./contracts.js").Project) {
+  function setupAudit(project: import("./contracts.js").Project, maxPages = 100) {
     const usable = store.jobs(project.id).find(job => job.kind === "audit" && ["queued", "running", "paused", "completed"].includes(job.status) &&
       JSON.parse(store.step(job.id, "project")?.body ?? "null")?.domain === project.domain);
     if (usable) return usable;
-    const job = store.enqueue(jobInput.parse({ projectId: project.id, kind: "audit", maxCostUsd: 0, maxPages: 100 }), "setup-audit:" + project.id + ":" + randomUUID());
+    const job = store.enqueue(jobInput.parse({ projectId: project.id, kind: "audit", maxCostUsd: 0, maxPages }), "setup-audit:" + project.id + ":" + randomUUID());
     store.setStep(job.id, "project", "done", project);
     return job;
   }
@@ -294,6 +295,18 @@ export async function createApp(
   app.put("/api/projects/:id", (req) =>
     store.updateProject((req.params as any).id, parseProject(req.body)),
   );
+  app.patch("/api/projects/:id", (req) => {
+    const id = (req.params as any).id;
+    const parsed = projectInput.omit({ domain: true }).partial().parse(req.body);
+    const patch = Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.hasOwn(req.body as object, key)));
+    const { id: _id, createdAt: _createdAt, ...current } = store.project(id);
+    return store.updateProject(id, parseProject({ ...current, ...patch }));
+  });
+  app.delete("/api/projects/:id", (req) => {
+    const input = z.object({ confirmation: z.string() }).strict().parse(req.body);
+    if (runner.hasActiveProject((req.params as any).id)) throw new ProviderError('in_progress', 'Wait for this brand\'s current scan or cancellation to finish.');
+    return store.deleteProject((req.params as any).id, input.confirmation);
+  });
   app.get("/api/projects/:id/workspace", (req) => {
     const id = (req.params as any).id;
     const project = store.project(id),
@@ -309,6 +322,12 @@ export async function createApp(
       : project.prompts;
     const coverage = auditCoverage.safeParse((audit?.result as any)?.coverage);
     const pages = audit ? store.pages(id, audit.id) : [];
+    const savedPages = new Map(store.pages(id).map(page => [page.id, page]));
+    const auditJobs = new Set(jobs.filter(job => job.kind === 'audit').map(job => job.id));
+    const findings = currentFindings(store.findings(id), jobs).map(finding => {
+      const page = finding.evidenceIds.map(id => savedPages.get(id)).find(Boolean);
+      return page && auditJobs.has(finding.jobId) ? auditFindingPresentation(project, finding, page) : finding;
+    });
     const metrics = measurementMetrics(measure, observations, measure ? prompts.length : 0);
     return {
       project,
@@ -316,7 +335,7 @@ export async function createApp(
       auditCoverage: coverage.success ? coverage.data : null,
       pages,
       observations,
-      findings: currentFindings(store.findings(id), jobs),
+      findings,
       content: store.artifacts(id, "content"),
       metrics,
       presentation: workspacePresentation(jobs, measure, observations,

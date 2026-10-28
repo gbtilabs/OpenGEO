@@ -9,6 +9,8 @@ import identity from "../brand/identity.json";
 import { version } from '../package.json';
 import { UsagePreference } from "./UsagePreference";
 import { WebsiteIconPreference } from "./WebsiteIconPreference";
+import { DesktopUpdates } from './DesktopUpdates';
+import { Tabs } from './ui/Primitives';
 import "./setup-refinements.css";
 import "./connections.css";
 import type { Provider } from "../server/contracts";
@@ -22,7 +24,7 @@ const descriptions = {
   openrouter: "Analyze your DataForSEO results and create content with your choice of AI model.",
 };
 export function ConnectionSettings({ connected, profiles, run: execute, variant = "settings", provider = "chatgpt", connectionsRequest = 0, beforeConnect }: { connected: Record<string, boolean>; profiles: ChatGPTProfiles; run: Run; variant?: "settings" | "onboarding"; provider?: Provider; connectionsRequest?: number; beforeConnect?: () => Promise<void> }) {
-  const [tab, setTab] = useState<string>("Connections"), [expanded, setExpanded] = useState<Provider | null>(null),
+  const [tab, setTab] = useState<string>('Connections'), [expanded, setExpanded] = useState<Provider | null>(null),
     [pending, setPending] = useState<any>(null), [notice, setNotice] = useState(""),
     [consolePlatforms, setConsolePlatforms] = useState<{ key: string; name: string }[]>([]), [capabilityError, setCapabilityError] = useState(""),
     [loadingCapabilities, setLoadingCapabilities] = useState(false), [capabilityRevision, setCapabilityRevision] = useState(0), [busy, setBusy] = useState(false),
@@ -32,7 +34,7 @@ export function ConnectionSettings({ connected, profiles, run: execute, variant 
   const [remote, setRemote] = useState(false);
   useEffect(() => { void api("/access").then(result => setRemote(result.remote === true)).catch(() => {}); }, []);
   const feedback = useFormFeedback();
-  useEffect(() => { setTab("Connections"); }, [connectionsRequest]);
+  useEffect(() => { if (connectionsRequest) setTab("Connections"); }, [connectionsRequest]);
   async function run(action: () => Promise<unknown>) {
     if (mutationPending.current) return;
     mutationPending.current = true; setBusy(true);
@@ -80,13 +82,11 @@ export function ConnectionSettings({ connected, profiles, run: execute, variant 
     return () => { stopped = true; clearInterval(timer); };
   }, [pending]);
   return <>
-    {variant === "settings" && <div className="settings-tabs" role="tablist" aria-label="Settings sections">{tabs.map(([label, Icon]) => <button role="tab" aria-selected={tab === label} aria-controls="settings-content" id={"settings-" + label.replaceAll(" ", "-")} tabIndex={tab === label ? 0 : -1} key={label} onClick={() => setTab(label)} onKeyDown={(event) => {
-      const index = tabs.findIndex(([name]) => name === tab);
-      if (["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = tabs[event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length][0]; setTab(next); document.getElementById("settings-" + next.replaceAll(" ", "-"))?.focus(); }
-    }}><Icon size={16} />{label}</button>)}</div>}
-    <div id="settings-content" role={variant === "settings" ? "tabpanel" : undefined} aria-labelledby={variant === "settings" ? "settings-" + tab.replaceAll(" ", "-") : undefined} className={variant === "onboarding" ? "setup-connections" : undefined}>
+    {variant === 'settings' && <Tabs label="Settings sections" panelId="settings-content" value={tab} onChange={setTab} items={tabs.map(([label, icon]) => ({ value: label, label, icon }))} />}
+    <div id="settings-content" role={variant === "settings" ? "tabpanel" : undefined} aria-label={variant === "settings" ? tab : undefined} className={variant === "onboarding" ? "setup-connections" : undefined}>
+      {variant === 'settings' && tab === 'About' && <DesktopUpdates />}
       {tab === "Connections" && <>
-        {variant === "settings" && <div className="connection-intro"><h2>Your connections</h2><p>Local audits work without an account. For AI answers, analysis and content, choose a connection below. You review the workflow and spending limit before starting.</p></div>}
+        {variant === "settings" && <div className="connection-intro"><h2>Your connections</h2><p>Website health checks work without an account. For AI answers, analysis and content, choose a connection below. You review the workflow and spending limit before starting.</p></div>}
         <FormFeedback feedback={feedback} />
         {notice && <div className={"alert " + (notice.includes(" connected.") ? "connection-notice-success" : "")} role="status">{notice}<button aria-label="Dismiss notice" onClick={() => setNotice("")}><X size={16} /></button></div>}
         {pending && <section className="panel" aria-label="Pending provider connection"><div className="panel-padding"><h2>Finish connecting {providerLabels[pending.provider as Provider]}</h2><p className="small">Complete sign-in in your browser. This workspace updates when it succeeds.</p><a className="secondary" href={pending.url} target="_blank" rel="noreferrer">Open sign-in <ArrowUpRight size={14} /></a>{pending.manualCallback && <form onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget, callback = new FormData(form).get("callback"); void run(async () => { await api("/connections/chatgpt/finish", { state: pending.state, callback }); form.reset(); }); }}><p className="small">After ChatGPT sign-in, your browser may show that the local callback page cannot be reached. Copy that full address from the address bar and paste it here. It contains a one-time code; do not share it.</p><label>Sign-in redirect URL<input name="callback" type="password" {...feedback.field("callback")} autoComplete="off" required /></label><button className="primary">Complete connection</button></form>}{pending.headless && <form onSubmit={(event) => { event.preventDefault(); const code = new FormData(event.currentTarget).get("code"); void run(async () => { await api("/connections/openrouter/finish", { state: pending.state, code }); setPending(null); }); }}><label>Authorization code<input name="code" {...feedback.field("code")} autoComplete="off" required /></label><button className="primary">Complete connection</button></form>}</div></section>}
@@ -121,7 +121,7 @@ export function ConnectionSettings({ connected, profiles, run: execute, variant 
       </>}
       {tab === "Schedules" && <ScheduleControls connected={connected} run={run} />}
       {tab === "Data & privacy" && <><UsagePreference /><WebsiteIconPreference /><BackupControls run={run} /><section className="panel"><div className="panel-padding"><h2>Your data stays under your control</h2><p>Projects, observations and drafts are stored locally. Credentials are excluded from exports. You can turn usage sharing off anytime. Selected provider calls send the task inputs needed for that operation.</p></div></section></>}
-      {tab === "About" && <section className="panel"><div className="about-product"><img src="/logo.svg" width="56" height="56" alt="" /><h2>{identity.name}</h2><span className="badge">Version {version}</span><p>{identity.tagline}</p><p>Free, open source software, with no artificial project limits.</p><small>Maintained by SurfacedBy. Managed services are optional.</small><div className="button-row"><a className="secondary" href="https://github.com/surfacedby/OpenGEO/releases" target="_blank" rel="noreferrer">Downloads and updates <ArrowUpRight size={14} /></a><a className="secondary" href="https://github.com/surfacedby/OpenGEO/issues" target="_blank" rel="noreferrer">Report a problem <ArrowUpRight size={14} /></a></div><p className="small">Updates are installed manually. Export your project before replacing an installation.</p></div></section>}
+      {tab === "About" && <section className="panel"><div className="about-product"><img src="/logo.svg" width="56" height="56" alt="" /><h2>{identity.name}</h2><span className="badge">Version {version}</span><p>{identity.tagline}</p><p>Free, open source software, with no artificial project limits.</p><small>Maintained by SurfacedBy. Managed services are optional.</small><div className="button-row"><a className="secondary" href="https://github.com/surfacedby/OpenGEO/releases" target="_blank" rel="noreferrer">Downloads and updates <ArrowUpRight size={14} /></a><a className="secondary" href="https://github.com/surfacedby/OpenGEO/issues" target="_blank" rel="noreferrer">Report a problem <ArrowUpRight size={14} /></a></div><p className="small">Your projects and connections are kept when you update the app. You can export a backup in Data & privacy.</p></div></section>}
       {remote && <p className="small"><a href="/logout">Lock this browser</a>. Projects and running tasks stay on the server.</p>}
     </div>
   </>;

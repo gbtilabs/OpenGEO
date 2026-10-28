@@ -10,6 +10,35 @@ export function EmptyState({ title, children, icon: Icon = Search, action }: { t
   return <div className="empty"><Icon size={24} aria-hidden="true" /><h3>{title}</h3><p>{children}</p>{action}</div>;
 }
 
+/** A single content surface owns its spacing; callers never nest panels to get padding. */
+export function Section({ title, description, action, children, className = '' }: { title?: string; description?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
+  return <section className={'content-section ' + className}>
+    {(title || action) && <div className="section-heading"><div>{title && <h2>{title}</h2>}{description && <p>{description}</p>}</div>{action}</div>}
+    <div className="section-body">{children}</div>
+  </section>;
+}
+
+export function Toolbar({ children, actions }: { children?: ReactNode; actions?: ReactNode }) {
+  return <div className="content-toolbar"><div className="toolbar-main">{children}</div>{actions && <div className="toolbar-actions">{actions}</div>}</div>;
+}
+
+export function ActionCard({ title, description, icon: Icon, children }: { title: string; description: string; icon: LucideIcon; children: ReactNode }) {
+  return <Section className="action-card"><Icon size={24} aria-hidden="true" /><h2>{title}</h2><p>{description}</p><div className="button-row">{children}</div></Section>;
+}
+
+export function Tabs<T extends string>({ label, value, items, onChange, panelId }: { label: string; value: T; items: { value: T; label: string; count?: number; icon?: LucideIcon }[]; onChange: (value: T) => void; panelId: string }) {
+  const id = useId();
+  return <div className="section-tabs" role="tablist" aria-label={label}>{items.map((item, index) => {
+    const Icon = item.icon;
+    return <button key={item.value} id={id + '-' + index} type="button" role="tab" aria-controls={panelId} aria-selected={item.value === value} tabIndex={item.value === value ? 0 : -1} onClick={() => onChange(item.value)} onKeyDown={event => {
+      if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length;
+      onChange(items[next].value); document.getElementById(id + '-' + next)?.focus();
+    }}>{Icon && <Icon size={16} aria-hidden="true" />}{item.label}{item.count !== undefined && <span className="tab-count">{item.count}</span>}</button>;
+  })}</div>;
+}
+
 const metricIcons: Record<string, LucideIcon> = { 'Brand mentions': MessagesSquare, 'Website citations': Link, 'Answers collected': Check, Opportunities: Lightbulb, 'Answers remaining': MessagesSquare };
 
 /** Deltas come from the server's same-scope comparison, not adjacent check values. */

@@ -8,11 +8,13 @@ Public v1 requires the complete workflow, working desktop/Docker distributions, 
 
 ## GitHub beta scope
 
-Version 0.1.0-beta.3 targets an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
+Version 0.1.0-beta.4 targets an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
 
 Only attach binaries whose exact payload passed confidentiality review and whose actual installation and local workflow were exercised. State the tested host and limitations: an isolated maintainer profile or native hosted runner is not a clean-machine certification. Do not attach untested platforms merely because source tests passed there.
 
-The beta release notes must disclose signing status, manual updates, local storage/backup behavior, optional usage sharing and external provider costs. Managed provider output/cost, financial recovery, activation, deployed usage collection and historical import remain separate acceptance gates. A beta release cannot relabel those gates as passed. They remain required before promoting the corresponding managed functionality as production-ready or declaring full v1 complete.
+The beta release notes must disclose signing status, automatic download preferences, explicit installation consent, manual Mac replacement, local storage/backup behavior, optional usage sharing and external provider costs. Managed provider output/cost, financial recovery, activation, deployed usage collection and historical import remain separate acceptance gates. A beta release cannot relabel those gates as passed. They remain required before promoting the corresponding managed functionality as production-ready or declaring full v1 complete.
+
+The Windows candidate gate exercises the actual assisted installer's Finish controls and packaged update download/checksum/explicit installation flow with an isolated local feed serving the exact candidate. A separate existing-version upgrade verifies retained workspace and encrypted connections. The controlled feed is not a live GitHub delivery test; publication separately verifies the public installer and update-feed bytes.
 
 Create a GitHub prerelease against the exact reviewed source commit. Include `SHA256SUMS.txt`, a public `release-manifest.json` with source commit and actual artifact hashes, and installation instructions. Never include private audit receipts, detector output, confidential matching values or workstation paths. After upload, download the actual public assets and verify their hashes against the reviewed files before announcing the release. Publishing a checksum is not a substitute for signing or malware/security review.
 

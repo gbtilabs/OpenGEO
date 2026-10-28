@@ -62,15 +62,16 @@ def install(installer):
     return app / 'Contents/MacOS/OpenGEO'
 
 
-def smoke(executable, phase=None):
+def smoke(executable, phase=None, label=None):
     command = ['node', 'scripts/desktop-smoke.mjs', str(executable)]
     if phase:
         command += ['--profile', str(profile), '--phase', phase, '--receipt', str(receipt)]
-    with (out / ('smoke-' + (phase or 'fresh') + '.stdout')).open('wb') as stdout, (out / ('smoke-' + (phase or 'fresh') + '.stderr')).open('wb') as stderr:
+    log_name = label or phase or 'fresh'
+    with (out / ('smoke-' + log_name + '.stdout')).open('wb') as stdout, (out / ('smoke-' + log_name + '.stderr')).open('wb') as stderr:
         result = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=180)
     if result.returncode:
         # This isolated test profile contains synthetic data; retain the actual failure in the job log too.
-        print((out / ('smoke-' + (phase or 'fresh') + '.stderr')).read_text(), file=sys.stderr)
+        print((out / ('smoke-' + log_name + '.stderr')).read_text(), file=sys.stderr)
         raise RuntimeError('Installed workflow failed at phase ' + str(phase))
 
 
@@ -105,6 +106,9 @@ else:
     executable = install(candidate)
     smoke(executable, 'verify')
     smoke(executable)
+    subprocess.run(['pwsh', '-NoProfile', '-File', 'scripts/verify-installer-finish.ps1', '-Installer', str(candidate), '-Installation', str(installation), '-Receipt', str(out / 'installer-finish.json')], check=True, timeout=240)
+    subprocess.run(['node', 'scripts/desktop-update-smoke.mjs', str(executable), str(candidate), str(profile), str(out / 'automatic-update.json')], check=True, timeout=300)
+    smoke(executable, 'verify', 'verify-after-update')
 if suffix == '.exe':
     built = build / 'win-unpacked'
     actual = inventory(installation)
@@ -144,13 +148,15 @@ record = {'source': source, 'runId': os.environ['GITHUB_RUN_ID'], 'target': targ
           'installer': {'name': name, 'bytes': candidate.stat().st_size, 'sha256': digest(candidate)},
           'payload': inventory(payload), 'previousInstallerSha256': old_hash,
           'freshInstalledWorkflow': True, 'upgradeWorkspaceAndOsEncryptedStorage': True,
+          'assistedFinishScreen': json.loads((out / 'installer-finish.json').read_text(encoding='utf-8-sig')) if suffix == '.exe' else None,
+          'packagedAutomaticUpdate': json.loads((out / 'automatic-update.json').read_text()) if suffix == '.exe' else None,
           'macUpgradeExplicitKeychainConsent': keychain_consent,
           'removedOwnedInstallation': True, 'signatures': signatures,
           'cleanMachineCertification': False, 'publicationApproved': False}
 (out / 'candidate.json').write_text(json.dumps(record, indent=2))
 bundle = out / ('candidate-' + os.environ['GITHUB_RUN_ID'] + '-' + target + '.tar.gz')
 with tarfile.open(bundle, 'w:gz', dereference=False) as archive:
-    for path in [candidate, out / 'candidate.json', payload, *out.glob('smoke-*.stdout'), *out.glob('smoke-*.stderr')]:
+    for path in [candidate, out / 'candidate.json', payload, *out.glob('smoke-*.stdout'), *out.glob('smoke-*.stderr'), *out.glob('*finish.json'), *out.glob('automatic-update.json')]:
         archive.add(path, arcname=path.name, recursive=True)
 upload(bundle)
 print(json.dumps({'target': target, 'installerSha256': record['installer']['sha256'], 'installedAndUpgradeChecks': True, 'privateBundleSha256': digest(bundle)}))

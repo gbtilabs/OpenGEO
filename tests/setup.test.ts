@@ -80,7 +80,7 @@ test("DataForSEO HTTP success without account authentication is not a connected 
   } finally { globalThis.fetch = original; await f.close(); }
 });
 
-test("custom setup requires measurement and AI connections; completion preserves the displayed usage choice", async () => {
+test("custom setup preserves consent and opens visibility setup without forcing a website audit", async () => {
   const f = await fixture();
   try {
     f.vault.set("dataforseo", { login: "synthetic-user", password: "synthetic-password" });
@@ -93,7 +93,9 @@ test("custom setup requires measurement and AI connections; completion preserves
     await f.app.inject({ method: "PUT", url: "/api/settings/usage-sharing", headers: f.headers, payload: { enabled: false } });
     assert.equal((await f.app.inject({ method: "POST", url: "/api/onboarding/start", headers: f.headers, payload: draft })).statusCode, 200);
     assert.deepEqual(f.store.setting("usageConsent", null), { enabled: false });
-    assert.equal(f.store.jobs().length, 1);
+    assert.equal(f.store.jobs().length, 0);
+    assert.equal(f.store.projects().length, 1);
+    assert.deepEqual((await f.app.inject({ url: '/api/onboarding', headers: f.headers })).json(), { completed: true, draft: null });
   } finally { await f.close(); }
 });
 

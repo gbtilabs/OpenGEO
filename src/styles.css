@@ -64,7 +64,8 @@ textarea { resize: vertical; line-height: 1.6; }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 input[type=checkbox] { accent-color: var(--primary); width: 16px; height: 16px; padding: 0; min-height: 0; flex: none; box-shadow: none; }
 form .primary, form .secondary { justify-self: start; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items:start; }
+.form-fields { display:grid; gap:24px; border:0; padding:0; margin:0; min-width:0; }
 .checkbox-field { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; font-weight: 500; }
 .checkbox-field small { flex-basis: 100%; padding-left: 25px; font-weight: 400; }
 [aria-invalid=true] { border-color: var(--danger); }
@@ -187,7 +188,8 @@ nav button:hover { background: var(--surface-3); color: var(--ink); }
 nav button.active { background: var(--primary-100); color: var(--primary-text); font-weight: 600; }
 nav button.active > svg { color: var(--primary); }
 .sidebar-bottom { margin-top: auto; padding: 14px 10px 0; border-top: 1px solid var(--divider); display: grid; gap: 10px; font-size: 12px; color: var(--muted); }
-.sidebar-bottom button { display: flex; align-items: center; justify-content: space-between; padding: 0; font-size: 12px; color: var(--text); }
+.sidebar-bottom nav { margin:0 -10px; }
+.sidebar-bottom button { display: flex; align-items: center; gap:10px; padding:10px 12px; font-size:13px; width:100%; }
 .sidebar-bottom button:hover { color: var(--primary-text); }
 .local-label { display: flex; gap: 6px; align-items: center; }
 .main-column { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -207,6 +209,7 @@ nav button.active > svg { color: var(--primary); }
 main { overflow: auto; padding: var(--page-space) var(--page-space) 48px; flex: 1; }
 .page-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; gap: 20px; }
 .page-heading p { color: var(--muted); margin-top: 4px; font-size: 13px; }
+.page-heading > button { flex-shrink:0; max-width:100%; white-space:normal; }
 .mobile-project-switch { display: none; }
 .mobile-navigation-trigger { display: none; }
 .mobile-navigation-menu { display: grid; gap: 2px; padding: 10px; }

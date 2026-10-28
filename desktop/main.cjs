@@ -86,6 +86,42 @@ else {
           window.hide();
         }
       });
+      const { autoUpdater } = require('electron-updater');
+      const updateTransport = process.platform === 'darwin'
+        ? new (require('./mac-updates.cjs').MacUpdates)(autoUpdater, path.join(app.getPath('userData'), 'update-downloads'), process.arch)
+        : autoUpdater;
+      const updates = require('./updates.cjs').createUpdates({
+        updater: updateTransport,
+        installed: app.isPackaged && ['win32', 'darwin'].includes(process.platform),
+        version: app.getVersion(),
+        manualInstall: process.platform === 'darwin',
+        readPreference: () => runtime.store.setting('desktopAutoDownload', true),
+        savePreference: (value) => runtime.store.set('desktopAutoDownload', value),
+        publish: (state) => { if (!window.isDestroyed()) window.webContents.send('opengeo:update-state', state); },
+        canInstall: () => draftProtectionPending ? 'Save your changes before restarting.' : runtime.store.projects().some(project => runtime.runner.hasActiveProject(project.id)) || runtime.store.jobs().some(job => ['queued', 'running', 'paused'].includes(job.status) || job.error === 'cancel_remote') ? 'Finish or resolve your active scans before restarting.' : null,
+        install: async () => {
+          if (process.platform === 'darwin') {
+            const failure = await shell.openPath(updateTransport.installer);
+            if (failure) throw new Error('The downloaded installer could not open.');
+            return;
+          }
+          const installer = autoUpdater.installerPath;
+          if (!installer || !require('node:fs').statSync(installer).isFile()) throw new Error('The downloaded installer is no longer available.');
+          // The normal before-quit handler closes storage only after the updater requests exit.
+          autoUpdater.quitAndInstall(false, true);
+        },
+      });
+      ipcMain.handle('opengeo:updates', (event, action, value) => {
+        if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw new Error('Update request denied.');
+        if (action === 'status') return updates.snapshot();
+        if (!['check', 'download', 'install', 'preference', 'cancel'].includes(action)) throw new Error('Unknown update action.');
+        return updates.command(action, value);
+      });
+      if (app.isPackaged && ['win32', 'darwin'].includes(process.platform)) {
+        const initial = setTimeout(() => void updates.command('check'), 30000);
+        const recurring = setInterval(() => void updates.command('check'), 6 * 60 * 60 * 1000);
+        app.once('will-quit', () => { clearTimeout(initial); clearInterval(recurring); });
+      }
       await window.loadURL(origin);
       const icon = path.join(app.getAppPath(), "assets/app-icon.png");
       tray = new Tray(nativeImage.createFromPath(icon));

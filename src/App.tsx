@@ -39,7 +39,10 @@ import { percent, shortDate, relativeTime, dateTime, usd } from "./format";
 import { api } from "./api";
 import { ConnectionSettings, type ChatGPTProfiles } from "./ConnectionSettings";
 import { Onboarding } from "./Onboarding";
-import { QuestionRows, type QuestionRow } from "./QuestionRows";
+import { PromptWorkspace } from "./PromptWorkspace";
+import { BrandSettings } from "./BrandSettings";
+import { DesktopUpdates } from './DesktopUpdates';
+import { useCloseProtection, type EditState } from './useCloseProtection';
 import { Select } from "./Select";
 import { AuditPages } from './AuditPages';
 import { FormFeedback, useFormFeedback } from "./FormFeedback";
@@ -54,7 +57,7 @@ import { ContentWorkspace } from "./ContentWorkspace";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { runsNeedingAttention } from "./runs";
 import { Competitors } from "./Competitors";
-import { PageHeader, EmptyState, emptyIcon, MetricCard as Metric } from './ui/Primitives';
+import { PageHeader, EmptyState, emptyIcon, ActionCard, MetricCard as Metric } from './ui/Primitives';
 import { OverviewSummary } from './OverviewSummary';
 import { Dialog as Modal } from './ui/Dialog';
 import { completedMeasurement } from "../server/portable-results";
@@ -101,7 +104,8 @@ type Workspace = {
 };
 const navigation = [
   ["Overview", LayoutDashboard],
-  ["Site Audit", ScanSearch],
+  ["Scans", ScanSearch],
+  ["Prompts", MessagesSquare],
   ["Visibility", ChartNoAxesCombined],
   ["Responses", MessagesSquare],
   ["Sources", Link],
@@ -109,6 +113,7 @@ const navigation = [
   ["Content", FileText],
   ["Competitors", Users],
   ["Reports", ChartColumn],
+  ["Brand", Globe],
   ["Settings", Settings],
 ] as const;
 function Empty({ title, children }: { title: string; children: ReactNode }) {
@@ -142,12 +147,14 @@ export function App() {
     [unsavedDraft, setUnsavedDraft] = useState<{ projectId: string; id: string; markdown: string; baseMarkdown: string; recoverySession: string } | null>(null),
     [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null),
     [navigationError, setNavigationError] = useState(""),
+    [editState, setEditState] = useState<EditState>({ dirty: false, busy: false }),
     [sessionReady, setSessionReady] = useState(false),
     [setupState, setSetupState] = useState<{ completed: boolean; draft: SetupDraft | null } | null>(null);
   const selectedRef = useRef(selected);
   const mainRef = useRef<HTMLElement>(null);
   const refreshSequence = useRef(0);
   selectedRef.current = selected;
+  useCloseProtection(editState.dirty || editState.busy);
   async function refresh() {
     // A slower poll must not replace a newer mutation or another website's view.
     const sequence = ++refreshSequence.current;
@@ -232,7 +239,8 @@ export function App() {
   }, [w, pendingContent, unsavedDraft]);
   useEffect(() => { setEvidenceFilter(null); setAnswerStatus('all'); }, [w?.project.id, w?.measurement?.id]);
   function navigate(action: () => void) {
-    if (unsavedDraft) { setNavigationError(""); setPendingNavigation(() => action); }
+    if (editState.busy) { setError('Wait for your changes to finish saving.'); return; }
+    if (unsavedDraft || editState.dirty) { setNavigationError(""); setPendingNavigation(() => action); }
     else action();
   }
   const changePage = (label: string) => {
@@ -247,7 +255,7 @@ export function App() {
     setPage('Opportunities'); setFocusedFinding(finding.id);
   });
   if (!setupState) return <div className="startup-state" role="status"><img src="/logo.svg" width="40" height="40" alt="" /><h1>{identity.name}</h1>{error || refreshError ? <><p role="alert">{error || refreshError}</p><button className="secondary" disabled={refreshing} onClick={() => { setError(""); setRefreshError(""); void api("/session").then(() => { setSessionReady(true); return refresh(); }).catch((failure) => setError(failure.message)); }}>Try again</button></> : <p>Opening your workspace...</p>}</div>;
-  if (!setupState.completed || !projects.length || newProject || setupState.draft) return <Onboarding connected={connected} profiles={profiles} refresh={refresh} draft={setupState.draft} savedProject={projects.find((project) => project.id === setupState.draft?.projectId)} initialStep={setupState.completed && Object.values(connected).some(Boolean) ? 1 : 0} cancel={projects.length && setupState.completed ? () => setNewProject(false) : undefined} finish={async (project) => { selectedRef.current = project.id; setSelected(project.id); setNewProject(false); changePage("Overview"); await refresh(); }} />;
+  if (page !== "Settings" && (!setupState.completed || !projects.length || newProject || setupState.draft)) return <Onboarding openSettings={openConnections} connected={connected} profiles={profiles} refresh={refresh} draft={setupState.draft} savedProject={projects.find((project) => project.id === setupState.draft?.projectId)} initialStep={setupState.completed && Object.values(connected).some(Boolean) ? 1 : 0} cancel={projects.length && setupState.completed ? () => setNewProject(false) : undefined} finish={async (project, startVisibility) => { if (startVisibility) setJobDialog("measure"); selectedRef.current = project.id; setSelected(project.id); setNewProject(false); changePage("Overview"); await refresh(); }} />;
   const audited = !!w?.pages.length, measured = !!w?.metrics.completed;
   const comparison = w?.comparison?.status === "comparable" && w.jobs.find(completedMeasurement)?.id === w.measurement?.id ? w.comparison as { previousAt: string; mentionPoints: number | null; citationPoints: number | null } : null;
   const analysisMeasurement = w?.jobs.find(completedMeasurement);
@@ -259,15 +267,14 @@ export function App() {
   const pausedAnalysis = w?.jobs.find(job => job.kind === 'diagnose' && job.status === 'paused' && (!w.measurement || job.createdAt >= w.measurement.createdAt));
   const canAnalyze = connected.chatgpt || connected.console || connected.openrouter;
   const activeAudit = w?.jobs.find((job) => job.kind === "audit" && ["running", "queued"].includes(job.status));
-  const auditLabel = activeAudit?.status === "queued" ? "Audit queued" : activeAudit ? "Auditing..." : "Run audit";
   const canMeasure = providerOptions(connected).length > 0;
   const measurementAction = canMeasure
-    ? { label: p?.prompts.length ? "Check visibility" : "Add questions", action: () => p?.prompts.length ? setJobDialog("measure") : page === "Visibility" ? document.getElementById("project-questions")?.focus() : changePage("Visibility") }
+    ? { label: "Check visibility", action: () => editState.dirty || editState.busy ? setError('Save your prompt changes before starting a check.') : setJobDialog("measure") }
     : { label: "Connect for AI checks", action: openConnections };
-  const headingAction = page === "Site Audit" ? { label: auditLabel, action: () => setJobDialog("audit") }
+  const headingAction = page === "Prompts" ? measurementAction
     : page === "Visibility" ? activeMeasurement ? null : measurementAction
-    : page === "Overview" ? activeMeasurement ? { label: "View current check", action: () => changePage('Visibility') } : !audited ? { label: auditLabel, action: () => setJobDialog("audit") } : !measured ? measurementAction : activeAnalysis ? null : pausedAnalysis ? { label: "Review paused analysis", action: () => changePage('Opportunities') } : !analyzed && canAnalyze ? { label: "Find opportunities", action: () => setJobDialog('diagnose') } : { label: "Review opportunities", action: () => changePage("Opportunities") }
-    : page === "Opportunities" && audited && measured && !activeAnalysis && !pausedAnalysis ? { label: "Analyze evidence", action: () => setJobDialog("diagnose") }
+    : page === "Overview" ? activeMeasurement ? { label: "View current check", action: () => changePage('Visibility') } : !measured ? measurementAction : activeAnalysis ? null : pausedAnalysis ? { label: "Review paused analysis", action: () => changePage('Opportunities') } : !analyzed && canAnalyze ? { label: "Find opportunities", action: () => setJobDialog('diagnose') } : { label: "Review opportunities", action: () => changePage("Opportunities") }
+    : page === "Opportunities" && audited && measured && !activeAnalysis && !pausedAnalysis ? { label: "Find opportunities", action: () => setJobDialog("diagnose") }
     : page === "Content" && audited && !!w?.content.length ? { label: "Create content", action: () => { setContentFinding(null); setContentTopic(""); setJobDialog("content"); } } : null;
   return (
     <div className="shell">
@@ -292,7 +299,7 @@ export function App() {
           </button>
         </div>
         <nav aria-label="Main navigation">
-          {[{ label: "Workspace", items: navigation.slice(0, 2) }, { label: "AI visibility", items: navigation.slice(2, 5) }, { label: "Improve", items: navigation.slice(5, 9) }, { label: "", items: navigation.slice(9) }].map(group => <div className="nav-group" key={group.label}>
+          {[{ label: "Workspace", items: [...navigation.slice(0, 2), navigation[10]] }, { label: "AI visibility", items: navigation.slice(2, 6) }, { label: "Improve", items: navigation.slice(6, 10) }].map(group => <div className="nav-group" key={group.label}>
           {group.label && <p>{group.label}</p>}
           {group.items.map(([label, Icon]) => (
             <button
@@ -308,14 +315,15 @@ export function App() {
           ))}</div>)}
         </nav>
         <div className="sidebar-bottom">
+          <nav aria-label="Application"><button className={page === 'Settings' ? 'active' : ''} aria-current={page === 'Settings' ? 'page' : undefined} onClick={() => changePage('Settings')}><Settings size={18} /><span>Settings</span></button></nav>
           <span className="local-label"><ShieldCheck size={14} />Runs on your device</span>
         </div>
       </aside>
       <div className="main-column">
         <header className="topbar">
           <button className="icon-button mobile-navigation-trigger" aria-label="Open navigation" aria-haspopup="dialog" onClick={() => setMobileNavigation(true)}><Menu size={20} /></button>
-          <div className="mobile-project-switch"><Select label="Mobile website" compact value={selected} onChange={(id) => { if (id !== selected) navigate(() => setSelected(id)); }} options={projects.map((project) => ({ value: project.id, label: project.domain, detail: project.brand, icon: <SiteIcon projectId={project.id} domain={project.domain} size={22} /> }))} /><button className="icon-button" aria-label="Add website on mobile" onClick={() => navigate(() => setNewProject(true))}><Plus size={17} /></button></div>
-          <div className="workspace-identity">{p && <SiteIcon projectId={p.id} domain={p.domain} size={30} />}<div><strong>{p?.brand ?? "Your workspace"}</strong>{p && <a href={"https://" + p.domain} target="_blank" rel="noreferrer">{p.domain}<ExternalLink size={11} /></a>}</div></div>
+          <div className={"mobile-project-switch" + (page === "Settings" ? " global-hidden" : "")}><Select label="Mobile website" compact value={selected} onChange={(id) => { if (id !== selected) navigate(() => setSelected(id)); }} options={projects.map((project) => ({ value: project.id, label: project.domain, detail: project.brand, icon: <SiteIcon projectId={project.id} domain={project.domain} size={22} /> }))} /><button className="icon-button" aria-label="Add website on mobile" onClick={() => navigate(() => setNewProject(true))}><Plus size={17} /></button></div>
+          <div className="workspace-identity">{page === 'Settings' ? <><Settings size={26} /><div><strong>OpenGEO settings</strong><span>Applies to every brand on this device</span></div></> : <>{p && <SiteIcon projectId={p.id} domain={p.domain} size={30} />}<div><strong>{p?.brand ?? "Your workspace"}</strong>{p && <a href={"https://" + p.domain} target="_blank" rel="noreferrer">{p.domain}<ExternalLink size={11} /></a>}</div></>}</div>
           <div className="topbar-actions"><button className="connection-shortcut" onClick={openConnections} aria-label="Manage connections"><span className={"connection-dot" + (connectedProviders.length ? "" : " off")} aria-hidden="true" />{connectedProviders.slice(0, 3).map((provider) => <ProviderIcon key={provider} provider={provider} size={16} />)}<span>{connectedProviders.length === 1 ? providerLabels[connectedProviders[0]] : connectedProviders.length ? connectedProviders.length + " connections" : "Connect a provider"}</span><ChevronDown size={13} /></button>
           <button
             className="icon-button"
@@ -327,16 +335,17 @@ export function App() {
           </button>
           </div>
         </header>
+        <DesktopUpdates compact />
         <main ref={mainRef} id="main-content" tabIndex={-1}>
           {profiles.welcome && page === 'Overview' && <section className="plan-welcome" aria-label="ChatGPT plan usage"><ProviderIcon provider="chatgpt" size={20} /><div><h2>Your ChatGPT plan is connected</h2><p>Your plan limits apply.</p></div><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Manage usage <ArrowUpRight size={14} /></a><button className="icon-button" aria-label="Dismiss ChatGPT connection notice" onClick={() => void run(() => api("/connections/chatgpt/acknowledge-plan", {}))}><X size={16} /></button></section>}
           <PageHeader title={page} description={page === 'Overview' ? identity.tagline : descriptions[page]} icon={navigation.find(([label]) => label === page)?.[1] ?? LayoutDashboard}>
             {p && headingAction && (
               <button
                 className="primary"
-                disabled={busy || ((page === "Site Audit" || (page === "Overview" && !audited)) && !!activeAudit)}
+                disabled={busy}
                 onClick={headingAction.action}
               >
-                {headingAction.label === "Connect for AI checks" ? <Link size={15} /> : headingAction.label.startsWith('Review') || headingAction.label.startsWith('View') ? <ArrowRight size={15} /> : headingAction.label === 'Create content' ? <Plus size={15} /> : page === 'Site Audit' ? <ScanSearch size={15} /> : <Play size={14} />}
+                {headingAction.label === "Connect for AI checks" ? <Link size={15} /> : headingAction.label.startsWith('Review') || headingAction.label.startsWith('View') ? <ArrowRight size={15} /> : headingAction.label === 'Create content' ? <Plus size={15} /> : page === 'Scans' ? <ScanSearch size={15} /> : <Play size={14} />}
                 {headingAction.label}
               </button>
             )}
@@ -363,7 +372,7 @@ export function App() {
               {w.measurement && ["Overview", "Visibility", "Responses", "Sources"].includes(page) && <MeasurementScope measurement={w.measurement} observations={w.observations} missing={w.metrics.missing} />}
               {page === "Overview" && (
                 <>
-                  <OverviewSummary brand={p!.brand} presentation={w.presentation} collected={w.metrics.completed} audited={w.pages.length} missing={w.metrics.missing} onAnswers={() => changePage('Responses')} onAudit={() => changePage('Site Audit')} />
+                  <OverviewSummary brand={p!.brand} presentation={w.presentation} collected={w.metrics.completed} audited={w.pages.length} missing={w.metrics.missing} onAnswers={() => changePage('Responses')} onAudit={() => changePage('Scans')} onCheck={measurementAction.action} />
                   {measured ? <div className="metrics">
                     <Metric
                       title="Brand mentions"
@@ -398,28 +407,21 @@ export function App() {
                   <RunsPanel jobs={runsNeedingAttention(w.jobs).filter((job) => measured || job.id !== activeAudit?.id)} run={run} />
                   {measured && <><div className="analytics-grid"><VisibilityChart presentation={w.presentation} openVisibility={() => changePage("Visibility")} /><SourcesTable presentation={w.presentation} collected={w.metrics.completed} compact evidence={openEvidence} openSources={() => changePage("Sources")} projectId={p!.id} ownDomain={p!.domain} /></div><div className="analytics-grid"><AnswerDistribution presentation={w.presentation} collected={w.metrics.completed} requested={w.metrics.requested} missing={w.metrics.missing} collecting={activeMeasurement?.id === w.measurement?.id} evidence={openEvidence} /><CitationComparison projectId={p!.id} ownDomain={p!.domain} rows={[ownWebsite!,...w.competitors]} evidence={openEvidence} openCompetitors={() => changePage("Competitors")} /></div></>}
                   {measured && !activeMeasurement && !analyzed && !activeAnalysis && !pausedAnalysis && <section className="insight-banner"><Lightbulb size={22} /><div><h2>{w.metrics.mentionRate === 0 ? 'Your brand was missing from this check' : 'Turn your visibility into your next improvement'}</h2><p>{`${w.metrics.completed} answers collected. Analyze them alongside your pages to find where useful content can make a difference.`}</p></div><button className="secondary" onClick={() => canAnalyze ? changePage('Opportunities') : openConnections()}>{canAnalyze ? 'Review next steps' : 'Connect for analysis'} <ArrowRight size={15} /></button></section>}
-                  {!measured && audited && <AuditSummary audit={w.presentation.audit} domain={p!.domain} findings={w.findings} openAudit={() => changePage("Site Audit")} />}
+                  {!measured && audited && <AuditSummary audit={w.presentation.audit} domain={p!.domain} findings={w.findings} openAudit={() => changePage("Scans")} />}
                   {!measured && <section className="panel next-steps">
                       <div className="panel-heading">
                         <h2>Your next steps</h2>
                       </div>
                       <WorkflowRow
                         n="1"
-                        title="Audit your site"
-                        description={
-                          w.pages.length
-                            ? w.pages.length +
-                              (w.pages.length === 1
-                                ? " page has been examined"
-                                : " pages have been examined")
-                            : "Find technical and content issues without a provider"
-                        }
-                        done={!!w.pages.length}
-                        onClick={() => activeAudit || audited ? changePage("Site Audit") : setJobDialog("audit")}
+                        title="Choose your prompts"
+                        description={p!.prompts.length ? `${p!.prompts.length} prompts ready to check` : "Discover questions your customers ask before choosing a business"}
+                        done={!!p!.prompts.length}
+                        onClick={() => changePage("Prompts")}
                       />
                       <WorkflowRow
                         n="2"
-                        title="Collect AI visibility evidence"
+                        title="See where AI recommends you"
                         description={
                           w.metrics.completed
                             ? "Review " +
@@ -428,11 +430,11 @@ export function App() {
                             : "Choose questions your customers ask"
                         }
                         done={!!w.metrics.completed}
-                        onClick={() => canMeasure ? changePage("Visibility") : openConnections()}
+                        onClick={measurementAction.action}
                       />
                       <WorkflowRow
                         n="3"
-                        title="Make an evidence-based improvement"
+                        title="Turn insights into better content"
                         description={w.findings.some((finding) => finding.status === "done") ? "Review the improvements you've marked done" : w.content.length ? "Review your drafts and apply an improvement" : "Turn evidence into useful content"}
                         done={w.findings.some((finding) => finding.status === "done")}
                         onClick={() => changePage("Content")}
@@ -473,18 +475,18 @@ export function App() {
                   </section>}
                 </>
               )}
-              {page === "Site Audit" && (
-                <><RunsPanel jobs={runsNeedingAttention(w.jobs, ["audit"])} run={run} /><AuditEssentials audit={w.presentation.audit} />{auditIssues.length > 0 && <section className="panel"><div className="panel-heading"><h2>Page improvements</h2><span>{auditIssueCount} {auditIssueCount === 1 ? 'check' : 'checks'} to review</span></div><Findings findings={auditIssues} projectId={p!.id} run={run} mode="audit" /></section>}<section className="panel">
+              {page === "Scans" && (
+                <><div className="scan-options"><ActionCard icon={ChartNoAxesCombined} title="AI visibility" description="Ask the questions your customers ask. See which brands are mentioned and which websites get cited."><button className="primary" onClick={measurementAction.action}>Check visibility<ArrowRight size={16} /></button><button className="text-button" onClick={() => changePage('Visibility')}>View results<ArrowRight size={14} /></button></ActionCard><ActionCard icon={ScanSearch} title="Website health" description="Find pages that are hard to access, missing useful details or unclear to search engines. Runs on your device with no AI charges."><button className="secondary" disabled={!!activeAudit} onClick={() => setJobDialog('audit')}>{activeAudit ? 'Checking your website...' : 'Check website health'}<ArrowRight size={16} /></button></ActionCard></div><RunsPanel jobs={runsNeedingAttention(w.jobs, ["audit", "measure", "recheck"])} run={run} /><h2>Website health results</h2><AuditEssentials audit={w.presentation.audit} />{auditIssues.length > 0 && <section className="panel"><div className="panel-heading"><h2>Page improvements</h2><span>{auditIssueCount} {auditIssueCount === 1 ? 'check' : 'checks'} to review</span></div><Findings findings={auditIssues} projectId={p!.id} run={run} mode="audit" /></section>}<section className="panel">
                   <div className="panel-heading">
-                    <h2>Audited pages</h2>
+                    <h2>Pages checked</h2>
                     <span>{w.pages.length} {w.pages.length === 1 ? "page" : "pages"}</span>
                   </div>
                   {w.auditCoverage && <AuditCoverageDetails coverage={w.auditCoverage} />}
                   {w.pages.length ? (
                     <AuditPages pages={w.pages} />
                   ) : (
-                    <Empty title={w.auditCoverage ? "No pages could be inspected" : "No pages audited yet"}>
-                      {w.auditCoverage ? "Review the audit coverage above before starting another run. Missing pages have not been assessed." : activeAudit ? 'Pages appear here as your audit finishes. Follow its progress above.' : <>Check crawl access, page headings and structured data. The audit runs locally and needs no provider account.<br /><button className="primary" onClick={() => setJobDialog('audit')}>Start site audit</button></>}
+                    <Empty title={w.auditCoverage ? "No pages could be inspected" : "Your website health check starts here"}>
+                      {w.auditCoverage ? "Review the coverage above before starting another run. Missing pages have not been assessed." : activeAudit ? 'Pages appear here as your check finishes. Follow its progress above.' : 'Start a website health check above. Results will show which pages need attention and what to improve.'}
                     </Empty>
                   )}
                 </section></>
@@ -519,9 +521,10 @@ export function App() {
                   {w.measurement && <><VisibilityChart presentation={w.presentation} /><PromptTable rows={w.presentation.prompts} collecting={activeMeasurement?.id === w.measurement.id} evidence={openEvidence} /></>}
                   <RunsPanel jobs={runsNeedingAttention(w.jobs, ["measure", "recheck"])} run={run} />
                   <CheckHistory jobs={w.jobs} currentId={w.measurement?.id} recheck={measured ? { disabled: !!activeMeasurement, start: () => setJobDialog("recheck") } : undefined} note={!comparison && w.jobs.find(completedMeasurement)?.id === w.measurement?.id ? w.comparison?.message : undefined} />
-                  <ProjectSettings project={p!} run={run} />
                 </>
               )}
+              {page === 'Brand' && <BrandSettings key={p!.id} project={p!} refresh={refresh} onEditState={setEditState} />}
+              {page === "Prompts" && <PromptWorkspace key={p!.id} project={p!} jobs={w.jobs} connected={connected} refresh={refresh} openConnections={openConnections} onEditState={setEditState} runControls={<RunsPanel jobs={runsNeedingAttention(w.jobs, ['discover'])} run={run} />} />}
               {page === "Responses" && (
                 <section className="panel">
                   <div className="panel-heading">
@@ -559,7 +562,7 @@ export function App() {
                 <section className="panel"><Findings findings={opportunities} projectId={p!.id} run={run}
                   emptyTitle={activeAnalysis ? "Your opportunities are on their way" : pausedAnalysis ? "Waiting for the analysis to finish" : "Find your next content opportunity"}
                   emptyMessage={activeAnalysis ? "You can explore your answers while the analysis runs." : pausedAnalysis ? "Recommendations appear after all reviewed pages have been checked. Your saved answers and progress are kept." : measured && audited ? "Analyze your answers alongside your website to identify specific pages to improve. A missing mention alone is not a recommendation." : measured ? 'Your answers are collected. Audit your pages next so recommendations can address the content already on your website.' : audited ? 'Your pages are audited. Collect AI answers next to find the gaps between your website and what customers are told.' : 'Start with a local site audit, then collect AI answers. Recommendations connect both sources of evidence to a specific improvement.'}
-                  emptyAction={!activeAnalysis && !pausedAnalysis ? <button className="primary" onClick={() => !audited ? setJobDialog('audit') : !measured ? changePage('Visibility') : canAnalyze ? setJobDialog('diagnose') : openConnections()}>{!audited ? 'Audit your site' : !measured ? 'Set up visibility' : canAnalyze ? 'Analyze your evidence' : 'Connect for analysis'}</button> : undefined}
+                  emptyAction={!activeAnalysis && !pausedAnalysis ? <button className="primary" onClick={() => !audited ? setJobDialog('audit') : !measured ? changePage('Visibility') : canAnalyze ? setJobDialog('diagnose') : openConnections()}>{!audited ? 'Audit your site' : !measured ? 'Set up visibility' : canAnalyze ? 'Find opportunities' : 'Connect for analysis'}</button> : undefined}
                   jobs={w.jobs} measurementId={analysisMeasurement?.id}
                   focusedFinding={focusedFinding} onFocused={() => setFocusedFinding(null)}
                   drafts={w.content} openContent={id => navigate(() => { setPage('Content'); setSelectedContent(id); })}
@@ -645,7 +648,8 @@ export function App() {
           </ErrorBoundary>
         </main>
       </div>
-      {pendingNavigation && <Modal title="Save your changes?" close={() => setPendingNavigation(null)}><p>You have unsaved changes to this draft.</p>{navigationError && <p className="inline-error" role="alert">{navigationError}</p>}<div className="button-row">
+      {pendingNavigation && !unsavedDraft && <Modal title="Discard unsaved changes?" close={() => setPendingNavigation(null)}><p>Your edits have not been saved. Keep editing to save them, or discard them to continue.</p><div className="button-row"><button className="primary" onClick={() => setPendingNavigation(null)}>Keep editing</button><button className="secondary" onClick={() => { setEditState({ dirty: false, busy: false }); setPendingNavigation(null); pendingNavigation(); }}>Discard changes</button></div></Modal>}
+      {pendingNavigation && unsavedDraft && <Modal title="Save your changes?" close={() => setPendingNavigation(null)}><p>You have unsaved changes to this draft.</p>{navigationError && <p className="inline-error" role="alert">{navigationError}</p>}<div className="button-row">
         <button className="primary" disabled={busy} onClick={() => void run(async () => { try { if (unsavedDraft) await api("/projects/" + unsavedDraft.projectId + "/content/" + unsavedDraft.id, { markdown: unsavedDraft.markdown, baseMarkdown: unsavedDraft.baseMarkdown, recoverySession: unsavedDraft.recoverySession }, "PATCH"); setUnsavedDraft(null); setPendingNavigation(null); pendingNavigation(); } catch (failure) { setNavigationError((failure as Error).message); } })}>Save and continue</button>
         <button className="secondary" disabled={busy} onClick={() => void run(async () => { try { if (unsavedDraft) await api("/projects/" + unsavedDraft.projectId + "/content/" + unsavedDraft.id + "/recovery", undefined, "DELETE"); setUnsavedDraft(null); setPendingNavigation(null); pendingNavigation(); } catch (failure) { setNavigationError((failure as Error).message); } })}>Discard changes</button>
         <button className="secondary" disabled={busy} onClick={() => setPendingNavigation(null)}>Keep editing</button>
@@ -654,6 +658,7 @@ export function App() {
         <JobDialog
           kind={jobDialog}
           openConnections={() => { setJobDialog(null); openConnections(); }}
+          openPrompts={() => { setJobDialog(null); changePage('Prompts'); }}
           project={p}
           connected={connected}
           revision={revision}
@@ -671,7 +676,8 @@ export function App() {
   );
 }
 const descriptions: Record<string, string> = {
-  "Site Audit": "Inspect what your public pages expose to crawlers.",
+  Scans: "Check your AI visibility and website health in one place.",
+  Prompts: "Choose the questions you want your brand to be found for.",
   Visibility: "Measure mentions and citations for the questions that matter.",
   Responses: "Read the answers behind your measurements.",
   Sources: "Inspect the pages linked in collected answers.",
@@ -679,7 +685,8 @@ const descriptions: Record<string, string> = {
   Content: "Create useful content with research, source links and a review before publishing.",
   Competitors: "Keep a clear view of relevant competing brands.",
   Reports: "Keep, share and move your work.",
-  Settings: "Manage provider connections and scheduled work.",
+  Brand: "Manage this website's identity, audience and comparison list.",
+  Settings: "Connections, schedules, privacy and updates for all your brands.",
 };
 function WorkflowRow({
   n,
@@ -709,7 +716,7 @@ function WorkflowRow({
     </button>
   );
 }
-const jobLabels: Record<Job["kind"], string> = { audit: "Site audit", discover: "Question suggestions", competitors: "Competitor review", measure: "Visibility check", recheck: "Visibility recheck", diagnose: "Recommendations", content: "Content draft", revise: "Draft revision" };
+const jobLabels: Record<Job["kind"], string> = { audit: "Website health", discover: "Question suggestions", competitors: "Competitor review", measure: "Visibility check", recheck: "Visibility recheck", diagnose: "Recommendations", content: "Content draft", revise: "Draft revision" };
 const jobIcons: Record<Job["kind"], typeof ScanSearch> = { audit: ScanSearch, discover: Sparkles, competitors: Users, measure: ChartNoAxesCombined, recheck: RefreshCw, diagnose: Lightbulb, content: FileText, revise: FilePenLine };
 /** A run's live status. A check with every answer saved is only finishing follow-up work. */
 function jobSummary(job: Job) {
@@ -779,41 +786,6 @@ function Jobs({
     </ul>
   ) : null;
 }
-function ProjectSettings({ project, run }: { project: Project; run: (action: () => Promise<unknown>) => Promise<void> }) {
-  const [saving, setSaving] = useState(false), [message, setMessage] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [rows, setRows] = useState<QuestionRow[]>(project.prompts.map(text => ({ id: crypto.randomUUID(), text, selected: true })));
-  useEffect(() => { setEditing(false); setMessage(""); setRows(project.prompts.map(text => ({ id: crypto.randomUUID(), text, selected: true }))); }, [project.id]);
-  const feedback = useFormFeedback(), { setError } = feedback;
-  return <section className="panel">
-    <div className="panel-heading"><h2>Questions to check</h2><span>{project.prompts.length} configured</span>{project.prompts.length > 0 && !editing && <button className="text-button" onClick={() => setEditing(true)}>Edit questions <ArrowRight size={14} /></button>}</div>
-    {(editing || !project.prompts.length) && <form key={project.id} className="settings-form" onSubmit={(event) => {
-      event.preventDefault();
-      const data = new FormData(event.currentTarget), lines = (key: string) => String(data.get(key) ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
-      setEditing(true); setSaving(true); setError(""); setMessage("");
-      void run(async () => {
-        try {
-          await api("/projects/" + project.id, { domain: project.domain, brand: data.get("brand"), aliases: lines("aliases"), competitors: lines("competitors"), prompts: [...new Set(rows.filter(row => row.selected).map(row => row.text.trim()).filter(Boolean))], locale: data.get("locale"), knowledge: data.get("knowledge") }, "PUT");
-          setMessage("Questions and website details saved.");
-        } catch (failure) { setError(failure); }
-        finally { setSaving(false); }
-      });
-    }}>
-      <QuestionRows rows={rows} onChange={setRows} disabled={saving} feedback={feedback} />
-      <details className="advanced-settings"><summary>Brand, language and competitors <ChevronDown size={16} /></summary>
-        <div className="advanced-fields"><div className="form-grid">
-          <label>Brand name<input name="brand" {...feedback.field("brand")} defaultValue={project.brand} /></label>
-          <label>Answer language and region<Select label="Project language and region" name="locale" {...feedback.field("locale")} defaultValue={project.locale} options={[...new Set([project.locale, "en-US", "en-GB", "fr-FR", "es-ES", "de-DE", "ar-MA", "pt-BR"])].map((locale) => ({ value: locale, label: new Intl.DisplayNames(["en"], { type: "language" }).of(locale) ?? locale }))} /></label>
-          <label>Other names for your brand<textarea name="aliases" {...feedback.field("aliases")} defaultValue={project.aliases.join("\n")} placeholder="One name per line" rows={3} /></label>
-          <label>Competitor websites<textarea name="competitors" {...feedback.field("competitors")} defaultValue={project.competitors.join("\n")} placeholder="One website per line" rows={3} /></label>
-        </div><label>Your expertise and brand facts<textarea name="knowledge" {...feedback.field("knowledge")} rows={4} defaultValue={project.knowledge} /></label></div>
-      </details>
-      <FormFeedback feedback={feedback} />
-      {message && <p className="save-notice" role="status">{message}</p>}
-      <button className="primary" disabled={saving}>{saving ? "Saving..." : "Save questions"}</button>
-    </form>}
-  </section>;
-}
 function JobDialog({
   kind,
   project,
@@ -826,6 +798,7 @@ function JobDialog({
   run,
   close,
   openConnections,
+  openPrompts,
   onStarted,
 }: {
   kind: Job["kind"];
@@ -839,6 +812,7 @@ function JobDialog({
   run: (f: () => Promise<unknown>) => Promise<void>;
   close: () => void;
   openConnections: () => void;
+  openPrompts: () => void;
   onStarted: (job: Job) => void;
 }) {
   const choices: Provider[] =
@@ -852,7 +826,6 @@ function JobDialog({
     [models, setModels] = useState<Model[]>([]),
     [model, setModel] = useState(""),
     [platform, setPlatform] = useState(baseline?.platform ?? "chat_gpt"),
-    [webSearch, setWebSearch] = useState(baseline?.webSearch ?? true),
     [consolePlatforms, setConsolePlatforms] = useState<{ key: string; name: string; enabled: boolean }[]>([]),
     [selectedQuestionPlatforms, setSelectedQuestionPlatforms] = useState<string[]>([]),
     [loading, setLoading] = useState(false),
@@ -922,12 +895,13 @@ function JobDialog({
       stopped = true;
     };
   }, [provider, platform, connected[provider], discoveryRevision]);
-  if (kind !== "audit" && !choices.some((choice) => connected[choice])) return <Modal title="Connect a provider to continue" close={close}><div className="empty"><Link size={25} /><h3>Choose a connection for this task</h3><p>ChatGPT powers AI work through your plan. Other providers are optional. Local site audits work without any connection.</p><button className="primary" onClick={openConnections}>Open connections <ArrowRight size={15} /></button></div></Modal>;
+  if (['measure', 'recheck'].includes(kind) && !project.prompts.length) return <Modal title="Choose what to check" close={close}><div className="empty"><MessagesSquare size={30} /><h3>Let's find your first prompts</h3><p>We can suggest questions from your website, or you can add your own. Choose a few to start measuring how AI recommends your brand.</p><button className="primary" onClick={openPrompts}><Sparkles size={16} />Discover prompts<ArrowRight size={16} /></button></div></Modal>;
+  if (kind !== "audit" && !choices.some((choice) => connected[choice])) return <Modal title="Connect a provider to continue" close={close}><div className="empty"><Link size={25} /><h3>Choose a connection for this task</h3><p>ChatGPT powers AI work through your plan. Other providers are optional. Website health checks work without any connection.</p><button className="primary" onClick={openConnections}>Open connections <ArrowRight size={15} /></button></div></Modal>;
   return (
     <Modal
       title={
         kind === "audit"
-          ? "Audit your website"
+          ? "Check website health"
           : kind === "revise"
             ? "Revise content"
           : kind === "content"
@@ -935,7 +909,7 @@ function JobDialog({
             : kind === "competitors"
               ? "Review competitor evidence"
             : kind === "diagnose"
-              ? "Analyze your visibility evidence"
+              ? "Find opportunities to improve"
               : kind === 'recheck' ? 'Recheck AI visibility' : "Measure AI visibility"
       }
       close={close}
@@ -961,7 +935,7 @@ function JobDialog({
               ...(kind === 'revise' ? { contentId: revision.id, revisionInstructions: d.get('instructions') } : {}),
               ...(kind === 'competitors' ? { measurementJobId } : {}),
               render: d.get("render") === "on",
-              webSearch: provider === "chatgpt" && ["measure", "recheck"].includes(kind) ? webSearch : true,
+              webSearch: true,
               maxPages: kind === "audit" ? Number(d.get("maxPages")) : 100,
               };
               const fingerprint = JSON.stringify(request);
@@ -1026,7 +1000,7 @@ function JobDialog({
             {!connected[provider] && (
               <p role="alert">{baseline ? 'The previous connection is unavailable. Reconnect it in Settings or choose another connection.' : 'Connect this provider in Settings first.'}</p>
             )}
-            {baseline && connected[provider] && !loading && !discoveryError && <p className="small" role="status">{provider === baseline.provider && platform === baseline.platform && (provider === 'console' || model === baseline.model) && (provider !== 'chatgpt' || webSearch === baseline.webSearch) ? 'Keeps the previous connection and answer settings. Changes to your questions or website settings start a separate comparison.' : !model && provider !== 'console' ? 'Choose an available model. Different answer settings start a separate comparison.' : 'Different answer settings start a separate comparison.'}</p>}
+            {baseline && connected[provider] && !loading && !discoveryError && <p className="small" role="status">{provider === baseline.provider && platform === baseline.platform && (provider === 'console' || model === baseline.model) && (provider !== 'chatgpt' || baseline.webSearch !== false) ? 'Keeps the previous connection and answer settings. Changes to your questions or website settings start a separate comparison.' : !model && provider !== 'console' ? 'Choose an available model. Different answer settings start a separate comparison.' : 'Different answer settings start a separate comparison.'}</p>}
             {["dataforseo", "console"].includes(provider) && ['measure', 'recheck'].includes(kind) && (
               <label>
                 Answer platform
@@ -1043,7 +1017,6 @@ function JobDialog({
               />
             )}
             {discoveryError && <div className="button-row"><p className="inline-error" role="alert">{discoveryError}</p><button type="button" className="secondary" disabled={loading || submitting} onClick={() => setDiscoveryRevision(value => value + 1)}>Retry availability check</button></div>}
-            {provider === "chatgpt" && ["measure", "recheck"].includes(kind) && <label className="checkbox-field"><input type="checkbox" name="webSearch" checked={webSearch} onChange={event => setWebSearch(event.target.checked)} />Search the web for this check<small>Requires web search permission for this model and account. Turn it off to collect model-only answers.</small></label>}
             {kind === "content" && (
               <label>
                 {finding ? 'Focus of the draft' : 'Topic'}
@@ -1076,10 +1049,6 @@ function JobDialog({
                 </small>
               </label>
             )}
-            {!project.prompts.length &&
-              ["measure", "recheck"].includes(kind) && (
-                <p>Add questions in Visibility before measuring.</p>
-              )}
           </>
         )}
         <FormFeedback feedback={feedback} />
@@ -1100,7 +1069,7 @@ function JobDialog({
           {submitting
             ? "Starting..."
             : kind === "audit"
-              ? "Start local audit"
+              ? "Start website health check"
               : kind === 'content' ? contentMode === 'page_update' ? 'Draft page copy' : 'Create draft' : kind === 'revise' ? 'Revise draft' : kind === 'diagnose' ? 'Find opportunities' : kind === 'competitors' ? 'Review competitors' : kind === 'recheck' ? 'Recheck visibility' : 'Start visibility check'}
         </button>
       </form>

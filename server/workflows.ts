@@ -87,6 +87,10 @@ export function mergePageTasks<T extends { targetPageId: string; title: string; 
   return [...tasks.values()];
 }
 export class Runner {
+  private cancelling = new Set<string>();
+  hasActiveProject(projectId: string) {
+    return (this.active && this.store.job(this.active.id).projectId === projectId) || [...this.cancelling].some(id => this.store.job(id).projectId === projectId);
+  }
   private timer: ReturnType<typeof setInterval> | undefined;
   private active:
     { id: string; abort: AbortController; done: Promise<void> } | undefined;
@@ -115,6 +119,12 @@ export class Runner {
     return this.active?.done ?? Promise.resolve();
   }
   async cancel(id: string) {
+    if (this.cancelling.has(id)) return this.store.job(id);
+    this.cancelling.add(id);
+    try { return await this.cancelWork(id); }
+    finally { this.cancelling.delete(id); }
+  }
+  private async cancelWork(id: string) {
     const job = this.store.job(id);
     if (["completed", "failed"].includes(job.status) || (job.status === "cancelled" && job.error !== "cancel_remote")) return job;
     this.store.updateJob(id, {

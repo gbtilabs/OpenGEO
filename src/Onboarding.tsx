@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Globe, LoaderCircle, ShieldCheck, ScanSearch, X, MessagesSquare, FileCheck2, Plus, Sparkles, Users, Upload } from "lucide-react";
 import { ConnectionSettings, type ChatGPTProfiles } from "./ConnectionSettings";
 import { providerLabels, ProviderIcon } from "./provider-ui";
-import { Select } from "./Select";
+import { LanguageSelect } from './LanguageSelect';
 import { api } from "./api";
 import { FormFeedback, useFormFeedback } from "./FormFeedback";
 import identity from "../brand/identity.json";
@@ -11,20 +11,15 @@ import { QuestionRows, type QuestionRow } from "./QuestionRows";
 import { BackupControls } from "./WorkflowControls";
 import type { DiscoveredWebsite, Job, Project, Provider, SetupDraft } from "../server/contracts";
 
-const steps = ["Connection", "Website", "Questions", "Review"];
-const languages = [
-  { value: "en-US", label: "English (United States)" }, { value: "en-GB", label: "English (United Kingdom)" },
-  { value: "fr-FR", label: "French (France)" }, { value: "fr-MA", label: "French (Morocco)" },
-  { value: "es-ES", label: "Spanish (Spain)" }, { value: "de-DE", label: "German (Germany)" },
-  { value: "ar-MA", label: "Arabic (Morocco)" }, { value: "pt-BR", label: "Portuguese (Brazil)" },
-];
+const steps = ["Connection", "Website", "Prompts", "Review"];
 /** The first check returns only websites offering a substitute; reference-only sources are excluded server-side. */
 const competingSites = (check: Job) => (check.result as { competitors?: DiscoveredWebsite[] }).competitors ?? [];
 
-export function Onboarding({ connected, profiles, refresh, finish, cancel, initialStep = 0, draft, savedProject }: {
+export function Onboarding({ connected, profiles, refresh, finish, cancel, initialStep = 0, draft, savedProject, openSettings }: {
   connected: Record<string, boolean>; profiles: ChatGPTProfiles; refresh: () => Promise<void>;
-  finish: (project: Project) => Promise<void>; cancel?: () => void; initialStep?: number;
+  finish: (project: Project, startVisibility?: boolean) => Promise<void>; cancel?: () => void; initialStep?: number;
   draft?: SetupDraft | null; savedProject?: Project;
+  openSettings: () => void;
 }) {
   const initialProvider = draft?.provider ?? (connected.chatgpt ? "chatgpt" : connected.console ? "console" : connected.dataforseo && connected.openrouter ? "dataforseo" : "chatgpt");
   const [step, setStep] = useState(draft?.step ?? initialStep), [provider, setProvider] = useState<Provider>(initialProvider === "openrouter" ? "dataforseo" : initialProvider),
@@ -184,31 +179,31 @@ export function Onboarding({ connected, profiles, refresh, finish, cancel, initi
       setProject(saved);
     }
     await api("/onboarding/start", { step: 3, projectId: project.id, localOnly, provider });
-    await finish({ ...project, competitors: check?.status === "completed" ? selectedCompetitors : project.competitors });
+    await finish({ ...project, competitors: check?.status === "completed" ? selectedCompetitors : project.competitors }, !localOnly && provider !== 'chatgpt');
   }
   return <div className="setup-shell">
     <header className="setup-header"><div className="brand"><img src="/logo.svg" width="30" height="30" alt="" /><span>{identity.name}</span></div>
-      {cancel ? <button className="icon-button" aria-label="Cancel website setup" disabled={busy} onClick={() => void run(async () => { await api("/onboarding/draft", null, "PUT"); cancel(); })}><X size={20} /></button> : <span className="setup-local"><ShieldCheck size={15} />Your local workspace</span>}
+      <div className="button-row"><button className="text-button" disabled={busy} onClick={openSettings}>App settings</button>{cancel ? <button className="icon-button" aria-label="Cancel website setup" disabled={busy} onClick={() => void run(async () => { await api("/onboarding/draft", null, "PUT"); cancel(); })}><X size={20} /></button> : <span className="setup-local"><ShieldCheck size={15} />Your local workspace</span>}</div>
     </header>
     <main className="setup-main" id="main-content">
       {!restoring && <ol className="setup-progress" aria-label="Setup progress">{steps.map((label, index) => ({ label, index })).filter(({ index }) => !localOnly || index !== 2).map(({ label, index }, position) => <li key={label} className={index === step ? "current" : index < step ? "complete" : ""} aria-current={index === step ? "step" : undefined}><span>{index < step ? <Check size={14} /> : position + 1}</span><strong>{label}</strong></li>)}</ol>}
       <div className="setup-layout"><aside className="setup-story" aria-label="How your workspace works"><h2>Get found<br />in AI search.</h2><p>See where your brand appears.<br />Turn the evidence into improvements.</p><div className="setup-workflow-visual"><div><span><Globe size={21} /></span><section><strong>Your website</strong><small>Audit your public pages</small></section></div><div><span><MessagesSquare size={21} /></span><section><strong>AI visibility</strong><small>Track mentions and citations</small></section></div><div><span><FileCheck2 size={21} /></span><section><strong>Your next move</strong><small>Improve content and recheck</small></section></div></div><div className="setup-story-privacy"><ShieldCheck size={15} /><span>Your projects stay on your device.</span></div></aside>
       <section className="setup-body" aria-busy={busy}>
         <div className="setup-heading"><h1 ref={heading} tabIndex={-1}>{restoring ? "Restore your workspace" : step === 0 ? "Power your AI visibility workspace" : step === 1 ? "Which website are you improving?" : step === 2 ? "Choose how customers find you" : check?.status === "completed" ? "Your first answers are ready" : "Ready for your first check?"}</h1>
-          <p>{restoring ? "Pick up where you left off, without running your saved checks again." : step === 0 ? "Use your ChatGPT subscription, connect SurfacedBy, or bring your own measurement and AI providers." : step === 1 ? "Add your public website and the brand you want to track." : step === 2 ? "Review questions suggested from your website. Edit them, add your own and choose which to check." : localOnly ? "Start with a free audit of your public pages." : provider === "chatgpt" ? "Check your selected questions with ChatGPT and see which businesses appear." : "Your local audit is free. Review a price before starting visibility checks from your dashboard."}</p>
+          <p>{restoring ? "Pick up where you left off, without running your saved checks again." : step === 0 ? "Use your ChatGPT subscription, connect SurfacedBy, or bring your own measurement and AI providers." : step === 1 ? "Add your public website and the brand you want to track." : step === 2 ? "Review questions suggested from your website. Edit them, add your own and choose which to check." : localOnly ? "Check the health of your public pages without connecting an AI provider." : provider === "chatgpt" ? "Check your selected questions with ChatGPT and see which businesses appear." : "Review your first AI visibility check and its spending limit before it starts."}</p>
         </div>
         <FormFeedback feedback={feedback} />
         {restoring && <><BackupControls run={run} restoreOnly onImported={finish} /><div className="setup-actions"><button className="secondary" disabled={busy} onClick={() => setRestoring(false)}><ArrowLeft size={15} />Back to setup</button></div></>}
         {step === 0 && !restoring && <>
           <div className="setup-provider-options" role="group" aria-label="Choose your setup">{(["chatgpt", "console", "dataforseo"] as const).map((item) => <button key={item} className={provider === item ? "selected" : ""} aria-pressed={provider === item} disabled={busy} onClick={() => void run(async () => { await api("/onboarding/draft", { ...makeDraft(0), provider: item, localOnly: false }, "PUT"); setProvider(item); setLocalOnly(false); })}><div className="setup-choice-icons"><ProviderIcon provider={item} size={21} />{item === "dataforseo" && <><Plus size={12} /><ProviderIcon provider="openrouter" size={21} /></>}</div><span>{item === "dataforseo" ? "Bring your own" : providerLabels[item]}<small>{item === "chatgpt" ? "Your subscription" : item === "console" ? "Managed insights" : "DataForSEO + OpenRouter"}</small></span>{(item === "dataforseo" ? connected.dataforseo && connected.openrouter : connected[item]) && <Check size={14} />}</button>)}</div>
           <ConnectionSettings connected={connected} profiles={profiles} run={run} variant="onboarding" provider={provider} beforeConnect={persistConnection} />
-          <div className="setup-actions"><div className="local-audit-option"><button className="secondary" disabled={busy} onClick={() => void run(() => continueConnection(true))}>Use local audits only</button><small>Not recommended: no AI visibility or content.</small></div><button className="primary" disabled={busy || !connectionReady} onClick={() => void run(() => continueConnection(false))}>Continue <ArrowRight size={16} /></button></div>
+          <div className="setup-actions"><div className="local-audit-option"><button className="secondary" disabled={busy} onClick={() => void run(() => continueConnection(true))}>Continue without AI</button><small>Explore website health now. Connect AI whenever you are ready.</small></div><button className="primary" disabled={busy || !connectionReady} onClick={() => void run(() => continueConnection(false))}>Continue <ArrowRight size={16} /></button></div>
           {!project && <div className="setup-actions"><button className="secondary" disabled={busy} onClick={() => { setError(""); setRestoring(true); }}><Upload size={16} />Restore saved work</button></div>}
         </>}
         {step === 1 && <form onSubmit={(event) => { event.preventDefault(); void run(saveWebsite); }}>
           <label htmlFor="setup-website">Website<input id="setup-website" name="domain" {...feedback.field("domain")} value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="example.com" required autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} inputMode="url" /></label>
           <label htmlFor="setup-brand">Brand name<input id="setup-brand" name="brand" {...feedback.field("brand")} value={brand} onChange={(event) => setBrand(event.target.value)} placeholder="Your business or product name" required maxLength={100} /></label>
-          <label>Answer language and region<Select label="Answer language and region" {...feedback.field("locale")} value={locale} options={languages} onChange={setLocale} /></label>
+          <label>Answer language and region<LanguageSelect label="Answer language and region" {...feedback.field("locale")} value={locale} onChange={setLocale} /></label>
           <div className="setup-actions"><button type="button" className="secondary" onClick={() => go(0)} disabled={busy}><ArrowLeft size={15} />Back</button><button className="primary" disabled={busy}>{busy ? "Reading website..." : !localOnly && provider === "chatgpt" ? "Find my questions" : "Continue"}<ArrowRight size={16} /></button></div>
         </form>}
         {step === 2 && <form onSubmit={(event) => { event.preventDefault(); void run(saveQuestions); }}>
@@ -236,12 +231,12 @@ export function Onboarding({ connected, profiles, refresh, finish, cancel, initi
           <div className="setup-actions"><button type="button" className="secondary" disabled={busy} onClick={() => go(1)}><ArrowLeft size={15} />Back</button><button className="primary" disabled={busy || !prompts.length}>{busy ? "Saving questions..." : "Continue"}<ArrowRight size={16} /></button></div>
         </form>}
         {step === 3 && project && <>
-          <dl className="setup-summary"><div><dt><Globe size={16} />Website</dt><dd>{project.domain}<small>{project.brand}</small></dd></div><div><dt><ProviderIcon provider={localOnly ? "local" : provider} size={16} />Connection</dt><dd>{localOnly ? "Local audits only" : provider === "dataforseo" ? "DataForSEO + OpenRouter" : providerLabels[provider]}</dd></div>{!localOnly && <div><dt><MessagesSquare size={16} />Questions</dt><dd>{project.prompts.length} ready to check</dd></div>}<div><dt><ScanSearch size={16} />First run</dt><dd>{!localOnly && provider === "chatgpt" ? "ChatGPT answers + competitor discovery" : "Website audit"}<small>{!localOnly && provider === "chatgpt" ? "Uses your connected ChatGPT plan" : "No provider charge"}</small></dd></div></dl>
+          <dl className="setup-summary"><div><dt><Globe size={16} />Website</dt><dd>{project.domain}<small>{project.brand}</small></dd></div><div><dt><ProviderIcon provider={localOnly ? "local" : provider} size={16} />Connection</dt><dd>{localOnly ? "Website health only" : provider === "dataforseo" ? "DataForSEO + OpenRouter" : providerLabels[provider]}</dd></div>{!localOnly && <div><dt><MessagesSquare size={16} />Questions</dt><dd>{project.prompts.length} ready to check</dd></div>}<div><dt><ScanSearch size={16} />First run</dt><dd>{!localOnly && provider === "chatgpt" ? "ChatGPT answers + competitor discovery" : localOnly ? "Website health" : "AI visibility"}<small>{!localOnly && provider === "chatgpt" ? "Uses your connected ChatGPT plan" : localOnly ? "No provider charge" : "Review the price before starting"}</small></dd></div></dl>
           {check && <section className="setup-check-status" aria-live="polite"><h2>{["queued", "running"].includes(check.status) ? <LoaderCircle className="loading-spin" size={19} /> : <Users size={19} />}{check.status === "completed" ? "Choose competitors to follow" : check.progress}</h2>
             {check.status === "completed" ? <><p>These businesses were named and cited in your answers. Choose which belong in your comparison.</p>{competingSites(check).map(item => <label className="competitor-choice" key={item.domain}><input type="checkbox" checked={selectedCompetitors.includes(item.domain)} onChange={event => setSelectedCompetitors(current => event.target.checked ? [...current, item.domain] : current.filter(domain => domain !== item.domain))} /><div><strong>{item.name}</strong><small>{item.domain}</small><p>{item.reason}</p></div></label>)}{!competingSites(check).length && <p>No competitors had enough supporting evidence in these answers. You can add them later.</p>}</> : <><p>{["queued", "running"].includes(check.status) ? "Your answers and citations are saved as they arrive." : "Saved answers are kept. Open your dashboard to review or resume this check."}</p>{["queued", "running"].includes(check.status) && <button className="secondary" disabled={busy} onClick={() => void run(() => api("/jobs/" + check.id + "/cancel", {}))}>Stop check</button>}</>}
           </section>}
           <UsagePreference compact onReadyChange={setUsageReady} />
-          <div className="setup-actions"><button className="secondary" disabled={busy || !!checkId} onClick={() => go(localOnly ? 1 : 2)}><ArrowLeft size={15} />Back</button><button className="primary" disabled={busy || !usageReady} onClick={() => void run(start)}>{busy ? <LoaderCircle className="loading-spin" size={16} /> : <ScanSearch size={16} />}{busy ? "Starting..." : checkId ? "Open dashboard" : !localOnly && provider === "chatgpt" ? "Check my questions" : "Open workspace & audit"}</button></div>
+          <div className="setup-actions"><button className="secondary" disabled={busy || !!checkId} onClick={() => go(localOnly ? 1 : 2)}><ArrowLeft size={15} />Back</button><button className="primary" disabled={busy || !usageReady} onClick={() => void run(start)}>{busy ? <LoaderCircle className="loading-spin" size={16} /> : <ScanSearch size={16} />}{busy ? "Starting..." : checkId ? "Open dashboard" : !localOnly && provider === "chatgpt" ? "Check my questions" : localOnly ? "Check website health" : "Review visibility check"}</button></div>
         </>}
       </section></div>
     </main>

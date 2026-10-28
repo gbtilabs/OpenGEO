@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, download } from "./api";
 import { Select } from "./Select";
+import { useCloseProtection } from './useCloseProtection';
 import { FormFeedback, useFormFeedback } from "./FormFeedback";
 import { ProviderIcon, providerOptions, providerLabels } from "./provider-ui";
 import { AnswerCard } from "./DataPresentation";
@@ -191,21 +192,14 @@ export function ContentEditor({
   useEffect(() => {
     if (markdown === saved) { setMarkdown(content.markdown); setSaved(content.markdown); }
   }, [content.markdown]);
-  useEffect(() => {
-    const guard = (event: BeforeUnloadEvent) => {
-      if (markdown !== saved && protection !== "Edits protected locally") { event.preventDefault(); event.returnValue = ""; }
-    };
-    window.addEventListener("beforeunload", guard);
-    window.opengeoDesktop?.setDraftProtectionPending(markdown !== saved && protection !== "Edits protected locally");
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [markdown, saved, protection]);
+  const protectClose = useCloseProtection(markdown !== saved && protection !== "Edits protected locally");
   useEffect(() => {
     const unsubscribe = window.opengeoDesktop?.onQuitDeferred(() => setError("Your edits have not finished saving locally. Save or export the draft before quitting."));
-    return () => { unsubscribe?.(); window.opengeoDesktop?.setDraftProtectionPending(false); };
+    return () => { unsubscribe?.(); };
   }, []);
   function changeDraft(value: string) {
     setJustSaved(false);
-    window.opengeoDesktop?.setDraftProtectionPending(value !== saved);
+    protectClose(value !== saved);
     setMarkdown(value); onDraftChange(value === saved ? null : { markdown: value, baseMarkdown: saved, recoverySession: session.current });
     const currentSession = session.current, currentSequence = ++sequence.current;
     setProtection("Protecting edits...");
@@ -321,7 +315,7 @@ export function ScheduleControls({ run, connected }: { run: (f: () => Promise<un
   const availableConnections: Record<string, boolean> = { ...connected, console: connected.console && (kind === "content" ? consoleAvailability?.content : consoleAvailability?.answers) === true },
     allowed: Provider[] = kind === "content" ? ["chatgpt", "console", "openrouter"] : ["chatgpt", "console", "dataforseo", "openrouter"],
     choices = providerOptions(availableConnections, allowed), local = kind === "audit",
-    workflows = [{ value: "audit", label: "Local audit", detail: "No provider required" },
+    workflows = [{ value: "audit", label: "Website health", detail: "No provider required" },
       ...(connected.chatgpt || connected.openrouter || connected.dataforseo || connected.console && consoleAvailability?.answers ? [{ value: "recheck", label: "Visibility recheck" }] : []),
       ...(connected.chatgpt || connected.openrouter || connected.console && consoleAvailability?.content ? [{ value: "content", label: "Content draft" }] : [])];
   useEffect(() => {
@@ -366,11 +360,11 @@ export function ScheduleControls({ run, connected }: { run: (f: () => Promise<un
   return <section className="panel">
     <div className="panel-heading"><h2>Schedules</h2><button className="secondary" disabled={saving} onClick={() => { submission.current = null; setError(""); setAdding(!adding); }}><Plus size={15} />Add schedule</button></div>
     <p className="small schedule-intro">Runs while {identity.name} is open. Docker can run continuously on your host. Missed runs become one fresh run.</p>
-    {!schedules.length && !adding && <div className="empty"><CalendarClock size={28} /><h3>Keep your workflow moving</h3><p>Choose a website, task and time. Start with a free local audit, or schedule AI work using a connected provider.</p></div>}
+    {!schedules.length && !adding && <div className="empty"><CalendarClock size={28} /><h3>Keep your workflow moving</h3><p>Choose a website, task and time. Schedule a website health check or an AI visibility check with a connected provider.</p></div>}
     {schedules.map((entry) => <div className="schedule-row" key={entry.id}>
       <CalendarClock size={18} /><div>
         <strong>{projects.find((project) => project.id === entry.job.projectId)?.domain ?? "Website unavailable"}</strong>
-        <p className="small">{entry.job.kind === "audit" ? "Local audit" : entry.job.kind === "content" ? "Content draft" : "Visibility recheck"}, {entry.frequency === "daily" ? "daily" : "weekly"}{entry.job.provider ? " with " + providerLabels[entry.job.provider as Provider] : ""}</p>
+        <p className="small">{entry.job.kind === "audit" ? "Website health" : entry.job.kind === "content" ? "Content draft" : "Visibility recheck"}, {entry.frequency === "daily" ? "daily" : "weekly"}{entry.job.provider ? " with " + providerLabels[entry.job.provider as Provider] : ""}</p>
         <small>Next run {dateTime(entry.nextAt)} ({entry.timezone.replaceAll("_", " ")})</small>
         {entry.job.provider && !connected[entry.job.provider] && <p className="small">Reconnect this provider before the next run.</p>}
         {entry.lastError && <p role="status" className="small">{entry.lastError}</p>}

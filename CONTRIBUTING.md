@@ -17,6 +17,7 @@ Follow the [development guide](docs/development.md) to run from source. Read the
 - Add meaningful tests for isolation, evidence calculations, security boundaries and paid-call recovery. Never weaken assertions to hide a failure.
 - Provider fixtures must cite the documented schema and exclude tracking IDs, credentials and personal data.
 - New providers need explicit budgets, capability checks and interrupted-request handling. Never add automatic paid fallback.
+- UI changes must follow the [shared design system](docs/design-system.md). Reuse existing primitives for repeated layouts and controls. Inspect rendered desktop and mobile states, including empty and populated pages; a successful build alone does not establish visual quality.
 
 ## Write and share safely
 

@@ -16,25 +16,34 @@ The interface uses Inter, Lucide icons, quiet borders and a pale canvas. Cards g
 | `MetricCard` | A measured value, its denominator and an optional comparable-check change |
 | `CoverageRing` | A real count and denominator, with an accessible text equivalent |
 | `EmptyState` | Explain what is missing and offer a useful next step |
+| `Section` | A content surface with one heading and consistent body spacing; do not nest panels for padding |
+| `Toolbar` | Search or context on the left, related list actions on the right |
+| `Tabs` | Shared tab navigation with arrow-key, Home and End support |
+| `ActionCard` | A small set of distinct workflows with a description and an explicit next action |
 | `Dialog` | Confirmations and task forms; `variant="drawer"` for full answer evidence |
 | `Select` | Searchable keyboard selection, including inside native dialogs |
+| `LanguageSelect` | The same language choices in setup and brand settings, preserving imported locales |
 
 Panels, buttons, form controls, tabs and responsive tables share the base styles in `styles.css`. Feature styles own layout, not alternate themes. Dialog dropdowns portal into their nearest dialog so they remain interactive in its modal layer. Escape closes the dropdown first; closing a dialog returns focus to its opener.
+
+Put the main action in `PageHeader`. Do not repeat the page introduction in a bordered banner directly below it. Use tabs to switch related views, one surface for a list, and dividers between rows. Let whitespace separate sections; a border is not a substitute for spacing. Reusable structures belong in `src/ui`, not copied JSX across screens. Render and inspect desktop and mobile states after changing shared components, including empty, populated, loading and error states.
 
 ## Screen patterns
 
 | Area | Pattern |
 | --- | --- |
 | Overview | Evidence summary, citation coverage, comparable history and next action |
-| Visibility | Trends, readable chart data, questions and check history |
+| Prompts | Tracked questions, grounded suggestions and prompt editing |
+| Visibility | Trends, readable chart data and check history |
 | Responses | Search and mutually exclusive outcome filters, then a full-answer drawer |
 | Sources | Domain/page views with citation counts and supporting answers |
 | Competitors | Saved comparison websites, citation comparison and supporting evidence |
-| Site Audit | Coverage, page findings and audit actions |
+| Scans | AI visibility and website health workflows, coverage and page findings |
 | Opportunities | Prioritized groups, supporting evidence and content handoff |
 | Content | Draft library, document editor, review and unsaved-change protection |
 | Reports | Export the saved project evidence |
-| Settings | Connections, schedules, privacy and app information |
+| Brand | Selected website's name, language, competitors, business context and deletion |
+| Settings | App-wide connections, schedules, privacy and updates, available without a brand |
 | Setup | The same controls and surfaces with a short, explicit progress sequence |
 
 ## Evidence and scope
@@ -45,6 +54,6 @@ Traffic attribution, market-wide rankings, outreach and sentiment scores require
 
 ## Local verification
 
-Build before browser checks. `scripts/analytics-ui-review.ts` covers all ten screens at desktop, tablet and mobile widths, then checks evidence navigation, filters, answer drawers and saved draft navigation. `scripts/workflow-ui-review.ts` checks task dialogs, dropdowns, keyboard isolation and submission safety. Connection and recheck review scripts cover provider availability and retained run settings.
+Build before browser checks. `scripts/analytics-ui-review.ts` covers all twelve screens at desktop, tablet and mobile widths, then checks header clipping, chart labels, evidence navigation, filters, answer drawers and saved draft navigation. `scripts/workflow-ui-review.ts` checks task dialogs, dropdowns, keyboard isolation and submission safety. Connection and recheck review scripts cover provider availability and retained run settings.
 
 These scripts use isolated local test records and keep paid work stopped. Their labelled screenshots are regression evidence, not public product claims. Public screenshots follow `SCREENSHOT_PROFILE.md`.

@@ -144,6 +144,12 @@ export async function crawl(
     maxPages,
   };
 }
+/** Saved findings keep their identity and progress while current explanations use the original page evidence. */
+export function auditFindingPresentation(project: Project, finding: Finding, page: PageEvidence): Finding {
+  const current = auditFindings(project, finding.jobId, [page]).find(item => item.kind === finding.kind);
+  return current ? { ...finding, title: current.title, description: current.description, steps: current.steps } : finding;
+}
+
 export function auditFindings(
   project: Project,
   jobId: string,
@@ -186,17 +192,17 @@ export function auditFindings(
       add(
         "title",
         "Add a descriptive page title",
-        "The retrieved page has no title.",
+        "This page has no HTML title. A clear title helps people recognize it in search results and browser tabs.",
         "medium",
         ["Describe the page topic and brand in a unique title."],
       );
     if (!p.description)
       add(
         "description",
-        "Write a page summary",
-        "No meta description was present in the retrieved HTML.",
+        "Add a useful search-result description",
+        "This page has no meta description. Search engines may write their own snippet, but a specific summary gives them a useful starting point.",
         "low",
-        ["Write an accurate summary of the page."],
+        ["Summarize what someone will find on this page and why it is useful. Make the description specific to this page."],
       );
     if (p.h1.length !== 1)
       add(
@@ -233,12 +239,12 @@ export function auditFindings(
     if (p.text.split(/\s+/).length < 100)
       add(
         "content",
-        "Review the page substance",
-        "The retrieved HTML exposes fewer than 100 words. A rendered audit may reveal more content.",
+        "Check whether this page explains enough",
+        "We could read fewer than 100 words on this page. It may need more detail, or it may load its content with JavaScript.",
         "medium",
         [
-          "Check the rendered page before changing content.",
-          "Add useful explanations supported by your expertise.",
+          "Open the page and check whether its main content is visible. If it loads with JavaScript, enable rendering in a website health check before editing it.",
+          "If the page is genuinely brief, explain what you offer, who it helps and how it works. Add useful examples or answers to customer questions, not words just to reach a count.",
         ],
       );
   }
