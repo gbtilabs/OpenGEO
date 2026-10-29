@@ -21,6 +21,7 @@ import {
   providers,
   ProviderError,
   auditCoverage,
+  type PageSummary,
 } from "./contracts.js";
 import { publicUrl, sameSiteHost } from "./network.js";
 import { campaignScope, campaignSummaries, campaignView, normalizeCampaigns, withCampaignChecks } from "./campaigns.js";
@@ -345,7 +346,7 @@ export async function createApp(
       project,
       jobs,
       auditCoverage: coverage.success ? coverage.data : null,
-      pages,
+      pages: pages.map(({ text: _text, links: _links, ...page }): PageSummary => page),
       observations,
       findings,
       content: store.artifacts(id, "content"),

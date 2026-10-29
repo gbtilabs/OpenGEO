@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { Plus, Save, Search, Trash2, X } from 'lucide-react';
-import type { Campaign, PageEvidence, Project } from '../server/contracts';
+import type { Campaign, PageSummary, Project } from '../server/contracts';
 import { api } from './api';
 import { Dialog } from './ui/Dialog';
 import { Select } from './Select';
@@ -8,7 +8,7 @@ import { FormFeedback, useFormFeedback } from './FormFeedback';
 
 /** Campaigns save with the brand, so a campaign can only point at questions and competitors the brand already tracks. */
 export function CampaignDialog({ project, pages, campaign, initialPrompts = [], close, saved }: {
-  project: Project; pages: PageEvidence[]; campaign: Campaign | null; initialPrompts?: string[];
+  project: Project; pages: PageSummary[]; campaign: Campaign | null; initialPrompts?: string[];
   close: () => void; saved: (id: string | null) => Promise<void>;
 }) {
   const [prompts, setPrompts] = useState(campaign?.prompts ?? initialPrompts), [targets, setTargets] = useState(campaign?.targetUrls ?? []), [competitors, setCompetitors] = useState(campaign?.competitors ?? []);
