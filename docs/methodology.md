@@ -46,7 +46,7 @@ A campaign reads every check that asked all of its questions: a check of the who
 
 A check limited to a campaign asks only that campaign's questions, so providers collect and price only those answers. Its answers count in the campaign. The brand's totals stay on the latest check of every question, and the brand's history shows the campaign check as a gap named after the campaign rather than as a reading.
 
-A target page is cited when an answer links to it. Each answer counts once per page. Fragments, a trailing slash and a leading `www.` are ignored; different paths and queries are different pages.
+A target page is cited when an answer links to it. Each answer counts once per page. Fragments, a trailing slash, a leading `www.` and `utm_` tracking parameters (ChatGPT adds `utm_source=openai` to the links it cites) are ignored; any other difference in path or query is a different page.
 
 ## Read source coverage
 

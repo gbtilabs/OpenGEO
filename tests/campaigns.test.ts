@@ -33,7 +33,7 @@ function provider(asked: string[], fail?: string) {
       asked.push(prompt);
       if (prompt === fail) throw new ProviderError('quota', 'Limit reached');
       const own = prompt.includes('dashboard');
-      return { text: own ? 'Example has a dashboard.' : 'Other tools publish reports.', citations: [{ url: own ? 'https://example.com/dashboard/' : 'https://example.org/reports', title: 'Reports' }], model: 'test-model', costUsd: .1 };
+      return { text: own ? 'Example has a dashboard.' : 'Other tools publish reports.', citations: [{ url: own ? 'https://example.com/dashboard/?utm_source=openai' : 'https://example.org/reports', title: 'Reports' }], model: 'test-model', costUsd: .1 };
     },
   };
 }
