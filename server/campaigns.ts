@@ -23,9 +23,11 @@ export function campaignScope(project: Project, campaignId?: string): Project {
   return { ...project, prompts: campaign.prompts, competitors: campaign.competitors.length ? campaign.competitors : project.competitors };
 }
 
+/** Answer engines tag the links they cite (ChatGPT adds utm_source=openai), so a tracking parameter never makes a cited page a different page. */
 function pageKey(value: string) {
   try {
     const url = new URL(value);
+    for (const name of [...url.searchParams.keys()]) if (name.toLowerCase().startsWith("utm_")) url.searchParams.delete(name);
     return url.hostname.replace(/^www\./, "") + url.pathname.replace(/\/+$/, "") + url.search;
   } catch {
     return value;

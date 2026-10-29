@@ -33,7 +33,7 @@ function provider(asked: string[], fail?: string) {
       asked.push(prompt);
       if (prompt === fail) throw new ProviderError('quota', 'Limit reached');
       const own = prompt.includes('dashboard');
-      return { text: own ? 'Example has a dashboard.' : 'Other tools publish reports.', citations: [{ url: own ? 'https://example.com/dashboard/' : 'https://example.org/reports', title: 'Reports' }], model: 'test-model', costUsd: .1 };
+      return { text: own ? 'Example has a dashboard.' : 'Other tools publish reports.', citations: [{ url: own ? 'https://example.com/dashboard/?utm_source=openai' : 'https://example.org/reports', title: 'Reports' }], model: 'test-model', costUsd: .1 };
     },
   };
 }
@@ -132,7 +132,7 @@ test('a check that skipped a campaign question is not a campaign reading, and mi
   } finally { await app.close(); f.close(); }
 });
 
-test('campaign checks are refused for another brand\'s campaign and for other kinds of work', async () => {
+test('campaign checks and schedules are refused for another brand\'s campaign and for other kinds of work', async () => {
   const f = fixture();
   const { app } = await createApp(f.store, f.vault, session);
   try {
@@ -144,6 +144,12 @@ test('campaign checks are refused for another brand\'s campaign and for other ki
     assert.equal((await start({ projectId: project.id, kind: 'measure', provider: 'dataforseo', maxCostUsd: 1, campaignId: empty.id })).statusCode, 409);
     assert.equal((await start({ projectId: other.id, kind: 'audit', campaignId: owned.id })).statusCode, 422);
     assert.equal(f.store.jobs().length, 0);
+    const schedule = (projectId: string, campaignId: string) => app.inject({ method: 'POST', url: '/api/schedules', headers: { ...headers, 'idempotency-key': randomUUID() },
+      payload: { job: { projectId, kind: 'measure', provider: 'dataforseo', maxCostUsd: 1, campaignId }, frequency: 'weekly', hour: 9, timezone: 'UTC', monthlyBudgetUsd: 1 } });
+    assert.equal((await schedule(project.id, owned.id)).statusCode, 409);
+    assert.equal((await schedule(project.id, empty.id)).statusCode, 409);
+    assert.equal((await schedule(other.id, owned.id)).statusCode, 200);
+    assert.deepEqual((await app.inject({ url: '/api/schedules', headers })).json().map((row: { job: { campaignId: string } }) => row.job.campaignId), [owned.id]);
   } finally { await app.close(); f.close(); }
 });
 
