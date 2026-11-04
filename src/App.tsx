@@ -10,6 +10,7 @@ import {
 import {
   LayoutDashboard,
   ScanSearch,
+  History,
   ChartNoAxesCombined,
   MessagesSquare,
   Link,
@@ -58,6 +59,9 @@ import { ContentWorkspace } from "./ContentWorkspace";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { runsNeedingAttention } from "./runs";
 import { Competitors } from "./Competitors";
+import { AskBar, AskDrawer, AskMobileTrigger } from "./ask/AskBar";
+import { AskPage } from "./ask/AskPage";
+import { useAskController } from "./ask/useAsk";
 import { PageHeader, EmptyState, emptyIcon, ActionCard, MetricCard as Metric } from './ui/Primitives';
 import { OverviewSummary } from './OverviewSummary';
 import { Dialog as Modal } from './ui/Dialog';
@@ -111,6 +115,7 @@ type Workspace = {
 const navigation = [
   ["Overview", LayoutDashboard],
   ["Scans", ScanSearch],
+  ["Ask history", History],
   ["Prompts", MessagesSquare],
   ["Campaigns", Flag],
   ["Visibility", ChartNoAxesCombined],
@@ -149,6 +154,7 @@ export function App() {
     [contentFinding, setContentFinding] = useState<Finding | null>(null),
     [competitorCheck, setCompetitorCheck] = useState<string | undefined>(),
     [campaignPage, setCampaignPage] = useState<string | null>(null),
+    [askId, setAskId] = useState<string | null>(null),
     [scope, setScope] = useState<string | null>(null),
     [campaignEditor, setCampaignEditor] = useState<{ campaign: Campaign | null; prompts?: string[] } | null>(null),
     [jobCampaign, setJobCampaign] = useState<string | null>(null),
@@ -163,6 +169,7 @@ export function App() {
     [setupState, setSetupState] = useState<{ completed: boolean; draft: SetupDraft | null } | null>(null);
   const selectedRef = useRef(selected);
   const mainRef = useRef<HTMLElement>(null);
+  const askSettings = useRef<HTMLButtonElement>(null);
   const refreshSequence = useRef(0);
   const refreshesInFlight = useRef(0);
   selectedRef.current = selected;
@@ -237,7 +244,7 @@ export function App() {
   const auditIssueCount = findingGroups(auditIssues).length;
   const ownCitations = w?.presentation.outcomes.find((group) => group.kind === "cited");
   const ownWebsite = w ? { domain:w.project.domain, citationRate:w.metrics.citationRate, answersCiting:ownCitations?.count ?? 0, answersCollected:w.metrics.completed, observationIds:ownCitations?.observationIds ?? [] } : null;
-  useEffect(() => { setScope(null); setCampaignPage(null); }, [selected]);
+  useEffect(() => { setScope(null); setCampaignPage(null); setAskId(null); }, [selected]);
   const lensPage = ["Visibility", "Responses", "Sources", "Competitors"].includes(page);
   const scoped = p?.campaigns.some((campaign) => campaign.id === scope) ? scope : null;
   const viewId = page === "Campaigns" ? campaignPage : lensPage ? scoped : null;
@@ -268,9 +275,10 @@ export function App() {
     else action();
   }
   const changePage = (label: string) => {
-    if (page === label) { mainRef.current?.scrollTo(0, 0); setCampaignPage(null); }
-    else navigate(() => { setPage(label); setQuery(""); setAnswerStatus('all'); setEvidenceFilter(null); setCampaignPage(null); if (label === 'Content') setSelectedContent(''); });
+    if (page === label) { mainRef.current?.scrollTo(0, 0); setCampaignPage(null); setAskId(null); }
+    else navigate(() => { setPage(label); setQuery(""); setAnswerStatus('all'); setEvidenceFilter(null); setCampaignPage(null); setAskId(null); if (label === 'Content') setSelectedContent(''); });
   };
+  const ask = useAskController(selected || undefined, (id) => navigate(() => { setPage("Ask history"); setAskId(id); }));
   const openConnections = () => navigate(() => { setPage("Settings"); setQuery(""); setEvidenceFilter(null); setConnectionsRequest(value => value + 1); });
   const openEvidence = (ids: string[], label: string) => navigate(() => {
     setPage("Responses"); setQuery(""); setAnswerStatus('all'); setEvidenceFilter({ ids, label });
@@ -331,7 +339,7 @@ export function App() {
           </button>
         </div>
         <nav aria-label="Main navigation">
-          {[{ label: "Workspace", items: [...navigation.slice(0, 2), navigation[11]] }, { label: "AI visibility", items: navigation.slice(2, 7) }, { label: "Improve", items: navigation.slice(7, 11) }].map(group => <div className="nav-group" key={group.label}>
+          {[{ label: "Workspace", items: [...navigation.slice(0, 2), navigation[12]] }, { label: "AI visibility", items: navigation.slice(2, 8) }, { label: "Improve", items: navigation.slice(8, 12) }].map(group => <div className="nav-group" key={group.label}>
           {group.label && <p>{group.label}</p>}
           {group.items.map(([label, Icon]) => (
             <button
@@ -356,8 +364,9 @@ export function App() {
           <button className="icon-button mobile-navigation-trigger" aria-label="Open navigation" aria-haspopup="dialog" onClick={() => setMobileNavigation(true)}><Menu size={20} /></button>
           <div className={"mobile-project-switch" + (page === "Settings" ? " global-hidden" : "")}><Select label="Mobile website" compact value={selected} onChange={(id) => { if (id !== selected) navigate(() => setSelected(id)); }} options={projects.map((project) => ({ value: project.id, label: project.domain, detail: project.brand, icon: <SiteIcon projectId={project.id} domain={project.domain} size={22} /> }))} /><button className="icon-button" aria-label="Add website on mobile" onClick={() => navigate(() => setNewProject(true))}><Plus size={17} /></button></div>
           <div className="workspace-identity">{page === 'Settings' ? <><Settings size={26} /><div><strong>OpenGEO settings</strong><span>Applies to every brand on this device</span></div></> : <>{p && <SiteIcon projectId={p.id} domain={p.domain} size={30} />}<div><strong>{p?.brand ?? "Your workspace"}</strong>{p && <a href={"https://" + p.domain} target="_blank" rel="noreferrer">{p.domain}<ExternalLink size={11} /></a>}</div></>}</div>
+          {p && page !== 'Settings' && <AskBar ask={ask} settingsButton={askSettings} />}
           {showLens && <CampaignLens campaigns={w!.campaigns} total={p!.prompts.length} value={scoped} onChange={chooseScope} onNew={() => setCampaignEditor({ campaign: null })} />}
-          <div className="topbar-actions"><button className="connection-shortcut" onClick={openConnections} aria-label="Manage connections"><span className={"connection-dot" + (connectedProviders.length ? "" : " off")} aria-hidden="true" />{connectedProviders.slice(0, 3).map((provider) => <ProviderIcon key={provider} provider={provider} size={16} />)}<span>{connectedProviders.length === 1 ? providerLabels[connectedProviders[0]] : connectedProviders.length ? connectedProviders.length + " connections" : "Connect a provider"}</span><ChevronDown size={13} /></button>
+          <div className="topbar-actions">{p && page !== 'Settings' && <AskMobileTrigger ask={ask} />}<button className="connection-shortcut" onClick={openConnections} aria-label="Manage connections"><span className={"connection-dot" + (connectedProviders.length ? "" : " off")} aria-hidden="true" />{connectedProviders.slice(0, 3).map((provider) => <ProviderIcon key={provider} provider={provider} size={16} />)}<span>{connectedProviders.length === 1 ? providerLabels[connectedProviders[0]] : connectedProviders.length ? connectedProviders.length + " connections" : "Connect a provider"}</span><ChevronDown size={13} /></button>
           <button
             className="icon-button"
             aria-label="Refresh workspace"
@@ -368,6 +377,7 @@ export function App() {
           </button>
           </div>
         </header>
+        {ask.open && p && page !== 'Settings' && <AskDrawer ask={ask} brand={p.brand} domain={p.domain} locale={p.locale} behind={mainRef} settingsButton={askSettings} />}
         <DesktopUpdates compact />
         <main ref={mainRef} id="main-content" tabIndex={-1}>
           {profiles.welcome && page === 'Overview' && <section className="plan-welcome" aria-label="ChatGPT plan usage"><ProviderIcon provider="chatgpt" size={20} /><div><h2>Your ChatGPT plan is connected</h2><p>Your plan limits apply.</p></div><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Manage usage <ArrowUpRight size={14} /></a><button className="icon-button" aria-label="Dismiss ChatGPT connection notice" onClick={() => void run(() => api("/connections/chatgpt/acknowledge-plan", {}))}><X size={16} /></button></section>}
@@ -407,6 +417,7 @@ export function App() {
               {lensLoading ? <div className="workspace-loading" role="status">{campaignError ? <p role="alert">{campaignError}</p> : <><span className="visually-hidden">Loading this campaign</span><div className="panel skeleton tall" aria-hidden="true" /></>}</div>
               : lens?.measurement && ["Visibility", "Responses", "Sources"].includes(page) ? <MeasurementScope measurement={lens.measurement} observations={lens.observations} missing={lens.metrics.missing} />
               : !lens && w.measurement && ["Overview", "Visibility", "Responses", "Sources"].includes(page) && <MeasurementScope measurement={w.measurement} observations={w.observations} missing={w.metrics.missing} />}
+              {page === "Ask history" && <AskPage projectId={p!.id} brand={p!.brand} domain={p!.domain} askId={askId} setAskId={setAskId} ask={ask} refresh={refresh} />}
               {page === "Overview" && (
                 <>
                   <OverviewSummary brand={p!.brand} presentation={w.presentation} collected={w.metrics.completed} audited={w.pages.length} missing={w.metrics.missing} onAnswers={() => changePage('Responses')} onAudit={() => changePage('Scans')} onCheck={measurementAction.action} />
@@ -724,6 +735,7 @@ export function App() {
   );
 }
 const descriptions: Record<string, string> = {
+  "Ask history": "Ask any question once and read each engine's answer. Asks stay out of your rates.",
   Scans: "Check your AI visibility and website health in one place.",
   Prompts: "Choose the questions you want your brand to be found for.",
   Visibility: "Measure mentions and citations for the questions that matter.",
