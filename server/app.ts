@@ -36,6 +36,7 @@ import {
   competitorEvidence,
 } from "./analysis.js";
 import { exportProject, reportMarkdown } from "./export.js";
+import { registerAsks } from "./asks.js";
 import { htmlDocument } from "./markdown.js";
 import { RemoteAccess, securityHeaders, type RemoteConfig } from "./remote-access.js";
 import {
@@ -58,7 +59,7 @@ export async function createApp(
   const sessionCookie = "opengeo_session_" + createHash("sha256").update(token).digest("hex").slice(0, 16);
   const siteIcons = new SiteIcons(undefined, () => store.setting('cachedWebsiteIcons', true));
   const usage = new UsageSharing(store);
-  store.onJobCompleted = (kind, provider) => { if (kind !== "discover") usage.record(({ audit: "audit_completed", measure: "visibility_completed", recheck: "recheck_completed", diagnose: "analysis_completed", competitors: "analysis_completed", content: "content_created", revise: "content_revised" } as const)[kind], kind === "audit" ? null : provider ?? null); };
+  store.onJobCompleted = (kind, provider) => { if (kind !== "discover" && kind !== "ask") usage.record(({ audit: "audit_completed", measure: "visibility_completed", recheck: "recheck_completed", diagnose: "analysis_completed", competitors: "analysis_completed", content: "content_created", revise: "content_revised" } as const)[kind], kind === "audit" ? null : provider ?? null); };
   store.onImprovementCompleted = () => usage.record("improvement_completed");
   const connections = new Connections(store, vault, () => {
       const address = app.server.address();
@@ -344,7 +345,7 @@ export async function createApp(
       snapshot?.body ? prompts : measure ? null : project.prompts, metrics.requested, pages);
     return {
       project,
-      jobs,
+      jobs: jobs.filter((job) => job.kind !== "ask"),
       auditCoverage: coverage.success ? coverage.data : null,
       pages: pages.map(({ text: _text, links: _links, ...page }): PageSummary => page),
       observations,
@@ -413,6 +414,7 @@ export async function createApp(
   });
   app.post("/api/jobs", (req) => {
     const input = jobInput.parse(req.body);
+    if (input.kind === "ask") throw new ProviderError("capability", "Start an ask from its own endpoint, which shares its spending limit across engines.");
     if (input.campaignId) campaignScope(store.project(input.projectId), input.campaignId);
     const key = z
       .string()
@@ -442,6 +444,7 @@ export async function createApp(
     const { id, content } = req.params as { id: string; content: string };
     return store.discardContentRecovery(id, content);
   });
+  registerAsks(app, { store, vault, providers: p, runner, parseProject });
   app.get("/api/jobs/:id", (req) => store.job((req.params as any).id));
   app.post("/api/jobs/:id/cancel", (req) =>
     runner.cancel((req.params as any).id),
