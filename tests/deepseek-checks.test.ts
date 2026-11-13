@@ -86,8 +86,10 @@ test('a DeepSeek check stops before an answer whose worst case would pass its bu
   const f = await fixture(script, true, prompts);
   try {
     const [flash] = deepseekModels(['deepseek-flash']);
-    assert.ok(deepseekAnswerEstimate(flash, 1300, 4096) < 0.085, 'one worst case fits the budget, so the first answer starts');
-    const created = await startCheck(f, { kind: 'measure', provider: 'deepseek', model: 'deepseek-flash', maxCostUsd: 0.085 });
+    // One worst case plus half a cent: the first answer starts, and its real cost (well over half a cent with
+    // this usage) leaves too little for the second answer's worst case. 1300 bounds the real token estimate.
+    const budget = Math.round((deepseekAnswerEstimate(flash, 1300, 4096) + 0.005) * 1000) / 1000;
+    const created = await startCheck(f, { kind: 'measure', provider: 'deepseek', model: 'deepseek-flash', maxCostUsd: budget });
     await f.runner.tick();
     const job = f.store.job(created.json().id);
     assert.equal(job.error, 'budget');
@@ -98,7 +100,7 @@ test('a DeepSeek check stops before an answer whose worst case would pass its bu
 
 test('the suggested check budget lets a whole check finish and scales with the model', () => {
   const [flash, pro] = deepseekModels(['deepseek-flash', 'deepseek-v4-pro']);
-  assert.equal(deepseekCheckBudget(82, flash), 1, 'the owner\'s 82 questions on Flash suggest $1.00');
+  assert.equal(deepseekCheckBudget(82, flash), 0.5, 'the owner\'s 82 questions on Flash suggest $0.50');
   assert.equal(deepseekCheckBudget(1, flash), 0.25, 'never below $0.25');
   assert.ok(deepseekCheckBudget(82, pro) > deepseekCheckBudget(82, flash));
   // Each answer needs its worst case to fit after the answers before it, so the suggestion must cover that.

@@ -78,7 +78,7 @@ try {
     await page.getByRole("button", { name: "Check visibility", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Measure AI visibility" });
     await dialog.getByText("Suggested for 82 questions.", { exact: false }).waitFor();
-    assert.equal(await dialog.getByLabel("Approved run budget (USD)").inputValue(), "1");
+    assert.equal(await dialog.getByLabel("Approved run budget (USD)").inputValue(), "0.5");
     assert.equal(await dialog.getByText("prepares recommendations", { exact: false }).count(), 0, "a DeepSeek check collects answers only");
     await dialog.getByText("Checks answers from DeepSeek", { exact: false }).waitFor();
     assert.equal(await dialog.getByText("OpenRouter", { exact: false }).count(), 0, "the DeepSeek dialog never names another provider's charges");
@@ -89,7 +89,7 @@ try {
   await dialog.getByRole("button", { name: "Start visibility check", exact: true }).click();
   await dialog.waitFor({ state: "hidden" });
   const started = runtime.store.jobs(project.id).find(job => job.kind === "measure" && job.status === "queued")!;
-  assert.deepEqual([started.provider, started.platform, started.maxCostUsd, started.prepareRecommendations ?? false], ["deepseek", "deepseek", 1, false]);
+  assert.deepEqual([started.provider, started.platform, started.maxCostUsd, started.prepareRecommendations ?? false], ["deepseek", "deepseek", 0.5, false]);
 
   // The schedule form offers DeepSeek for a recheck.
   await page.setViewportSize({ width: 1360, height: 900 });

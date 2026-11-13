@@ -21,7 +21,7 @@ export const deepseekPrices: { checked: string; source: string; searchUsd: numbe
   },
 };
 /** At most this many searches per answer; the call after the last one has no tool, so the model must answer. */
-export const maxSearches = 4;
+export const maxSearches = 2;
 export const searchCount = 8;
 /** Each search result is trimmed to these fields and lengths before it goes back to the model. */
 export const resultLimits = { title: 200, url: 500, snippet: 400, date: 40 };
@@ -59,7 +59,7 @@ export function deepseekAnswerEstimate(model: Pick<Model, "inputUsd" | "outputUs
 /**
  * A run budget that lets a check of `questions` answers finish: a typical answer allowed at 15% of the worst
  * case (answers so far have cost about 7%), plus one full worst case, because each answer starts only if its
- * worst case still fits. Rounded up to the next $0.25. 82 questions on Flash suggest $1.00.
+ * worst case still fits. Rounded up to the next $0.25. 82 questions on Flash suggest $0.50.
  */
 export function deepseekCheckBudget(questions: number, model: Pick<Model, "inputUsd" | "outputUsd">, tokenUpper = 1700, cap = 4096) {
   const worst = deepseekAnswerEstimate(model, tokenUpper, cap);

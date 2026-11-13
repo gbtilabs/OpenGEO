@@ -6,7 +6,7 @@ import { deepseekAnswerEstimate, deepseekComplete, deepseekModels, isPeak, maxSe
 import { answer, answerReply, costOf, fakeDeepSeek, fixture, headers, key, question, toolReply, type Script } from './deepseek-fixture.js';
 
 test('a DeepSeek ask runs its own searches, cites links in the answer, records an estimated cost and stays out of evidence', async () => {
-  const script: Script = { requests: [], replies: [toolReply(['free example report tools']), toolReply(['example reports site:example.com', 'nothing matches this']), answerReply(answer)] };
+  const script: Script = { requests: [], replies: [toolReply(['free example report tools']), toolReply(['nothing matches this']), answerReply(answer)] };
   const f = await fixture(script);
   try {
     const started = new Date();
@@ -18,19 +18,19 @@ test('a DeepSeek ask runs its own searches, cites links in the answer, records a
     assert.deepEqual([row.answer.provider, row.answer.platform, row.answer.surface, row.answer.retrieval, row.answer.webSearchConfirmed], ['deepseek', 'deepseek', 'api', 'web_search', true]);
     assert.deepEqual(row.answer.citations.map((c: any) => c.url), ['https://example.com/reports', 'https://example.org/compare']);
     assert.equal(row.answer.citations[0].title, 'Example reports');
-    assert.deepEqual(row.answer.searchQueries, ['free example report tools', 'example reports site:example.com', 'nothing matches this']);
+    assert.deepEqual(row.answer.searchQueries, ['free example report tools', 'nothing matches this']);
     assert.deepEqual([row.answer.mentioned, row.answer.cited], [true, true]);
-    // Three chat calls and two searches with results; the empty search is not billed.
+    // Three chat calls and one search with results; the empty search is not billed.
     const job = f.store.job(row.jobId);
     assert.equal(job.costBasis, 'includes_estimates');
-    assert.ok([costOf(3, 2, started), costOf(3, 2, new Date())].some(v => Math.abs(job.spentUsd - v) < 1e-9), 'spent ' + job.spentUsd);
+    assert.ok([costOf(3, 1, started), costOf(3, 1, new Date())].some(v => Math.abs(job.spentUsd - v) < 1e-9), 'spent ' + job.spentUsd);
     const [first, , last] = f.chats().map(r => r.body);
     assert.equal(first.model, 'deepseek-flash');
     assert.deepEqual(first.thinking, { type: 'disabled' });
     assert.equal(first.tools[0].function.name, 'web_search');
-    assert.deepEqual(last.messages.filter((m: any) => m.role === 'tool').length, 3);
+    assert.deepEqual(last.messages.filter((m: any) => m.role === 'tool').length, 2);
     assert.equal(JSON.parse(last.messages.find((m: any) => m.role === 'tool').content).results[0].url, 'https://example.com/reports');
-    assert.ok(last.messages.some((m: any) => m.role === 'assistant' && m.tool_calls?.length === 2));
+    assert.equal(last.messages.filter((m: any) => m.role === 'assistant' && m.tool_calls?.length === 1).length, 2, 'both tool turns are sent back');
     // The key is sent to DeepSeek's host only, and nothing else was contacted.
     assert.ok(script.requests.length > 0 && script.requests.every(r => r.host === 'api.deepseek.com' && r.auth === 'Bearer ' + key));
     // Ask answers are kept apart from the website's evidence.
@@ -39,21 +39,21 @@ test('a DeepSeek ask runs its own searches, cites links in the answer, records a
   } finally { await f.close(); }
 });
 
-test('a model that keeps searching gets four searches, then a call without the tool', async () => {
-  const script: Script = { requests: [], replies: [toolReply(['q one', 'q two', 'q three']), toolReply(['q four', 'q five']), answerReply('Done. https://example.com/reports')] };
+test('a model that keeps searching gets two searches, then a call without the tool', async () => {
+  const script: Script = { requests: [], replies: [toolReply(['q one']), toolReply(['q two', 'q three']), answerReply('Done. https://example.com/reports')] };
   const f = await fixture(script);
   try {
     const created = await f.ask({ question, engines: ['deepseek'], maxCostUsd: 1 });
     await f.runner.tick();
     const row = (await f.read(created.json().askId)).engines[0];
     assert.equal(row.state, 'answered');
-    assert.deepEqual(script.requests.filter(r => r.path === '/v1/tools/search').map(r => r.body.query), ['q one', 'q two', 'q three', 'q four']);
+    assert.deepEqual(script.requests.filter(r => r.path === '/v1/tools/search').map(r => r.body.query), ['q one', 'q two']);
     const calls = f.chats().map(r => r.body);
     assert.equal(calls.length, 3);
     assert.ok(calls[0].tools && calls[1].tools && !calls[2].tools, 'the last call must not offer the tool');
     assert.match(calls[2].messages.at(-1).content, /No more searches are available/);
     assert.match(calls[0].messages[0].content, /Do not mention your searches, the search tool or any search limit\./, 'the answer must not narrate the search loop');
-    assert.equal(maxSearches, 4);
+    assert.equal(maxSearches, 2);
   } finally { await f.close(); }
 });
 
@@ -76,8 +76,8 @@ test('cost uses the rate in force for each call and bills searches only when the
 test('the worst-case estimate bounds an answer, and a share below it stops before any DeepSeek request', async () => {
   const [flash, pro] = deepseekModels(['deepseek-flash', 'deepseek-v4-pro']);
   const flashWorst = deepseekAnswerEstimate(flash, 1500, 4096), proWorst = deepseekAnswerEstimate(pro, 1500, 4096);
-  assert.ok(flashWorst > 0.05 && flashWorst < 0.1 && proWorst > flashWorst, flashWorst + ' ' + proWorst);
-  assert.ok(costOf(5, 4, new Date('2026-11-09T02:30:00Z')) < flashWorst, 'a full search loop at peak must fit the estimate');
+  assert.ok(flashWorst > 0.02 && flashWorst < 0.05 && proWorst > flashWorst, flashWorst + ' ' + proWorst);
+  assert.ok(costOf(maxSearches + 1, maxSearches, new Date('2026-11-09T02:30:00Z')) < flashWorst, 'a full search loop at peak must fit the estimate');
   const script: Script = { requests: [], replies: [answerReply(answer)] };
   const f = await fixture(script);
   try {
