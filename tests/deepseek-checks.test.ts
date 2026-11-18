@@ -34,7 +34,7 @@ function seedChatGptCheck(f: Awaited<ReturnType<typeof fixture>>) {
 test('a DeepSeek check saves its answers as evidence, files them under DeepSeek, and leaves recommendations on the ChatGPT check', async () => {
   const script: Script = { requests: [], replies: [
     toolReply(['free example dashboards']),
-    answerReply('Example Brand lists free dashboards at [Example dashboards](https://example.com/dashboards).'),
+    answerReply('Example Brand lists free dashboards at [Example reports](https://example.com/reports).'),
     answerReply('Several tools publish reports, see https://example.org/compare.'),
   ] };
   const f = await fixture(script, true, prompts);

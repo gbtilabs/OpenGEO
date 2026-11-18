@@ -12,8 +12,10 @@ import { Connections } from "../server/oauth.js";
 import { Providers } from "../server/providers.js";
 import { Runner } from "../server/workflows.js";
 import { jobInput, projectInput } from "../server/contracts.js";
+import { exportProject } from "../server/export.js";
+import { importProject } from "../server/import.js";
 
-for (const scenario of ["lost_ack", "changed_receipt", "foreign_question", "cancel", "cancel_receipt", "cancel_completed"] as const) {
+for (const scenario of ["lost_ack", "changed_receipt", "foreign_question", "cancel", "cancel_receipt", "cancel_completed", "subcredit_budget"] as const) {
   test("selected-question measurement preserves approval and evidence: " + scenario, async () => {
     const directory = mkdtempSync(join(tmpdir(), "opengeo-managed-measurement-")), store = new Store(directory);
     const vault = new Vault(directory, { encrypt: text => Buffer.from(text), decrypt: bytes => bytes.toString() });
@@ -35,7 +37,7 @@ for (const scenario of ["lost_ack", "changed_receipt", "foreign_question", "canc
         input = body;
         assert.deepEqual(input.questions.map((row: any) => row.question), prompts);
         assert.equal(input.locale, "en-US"); assert.equal(input.country, "US");
-        data = { id: quote, domain_id: domain, operation: "measurement", estimated_credits: 4,
+        data = { id: quote, domain_id: domain, operation: "measurement", estimated_credits: 4, estimated_usd: '0.40',
           expires_at: new Date(Date.now() + 3600000).toISOString() };
       } else if (path === "/measurement/jobs") {
         purchases++;
@@ -60,7 +62,12 @@ for (const scenario of ["lost_ack", "changed_receipt", "foreign_question", "canc
             question: question.question, status: index === 1 ? "missing_observation" : "collected", platform: input.platform,
             locale: input.locale, country: input.country, surface: "consumer_interface", model: "measured-model",
             answer: index === 1 ? null : "Example helps teams share reports.",
+            web_search_used: index === 1 ? null : scenario === 'changed_receipt' ? false : scenario === 'lost_ack' ? true : null,
+            search_queries: index === 1 ? [] : ['report sharing', 'report sharing', 'q'.repeat(501), ...Array.from({ length: 21 }, (_, i) => 'report tool ' + i)],
             citations: index === 1 ? [] : [{ url: "https://example.com/reports", title: "Sharing reports" }],
+            retrieved_sources: index === 1 ? null : scenario === 'lost_ack' ? undefined : [
+              { url: "https://research.example.org/tools", title: "Research tools", secret: "internal" },
+              { url: "https://example.com/reports" }, { url: "http://127.0.0.1" }, { url: "javascript:bad" }],
             observed_at: "2026-10-08T08:00:00Z" })) };
       } else { assert.equal(path, "/jobs/" + remote); data = accepted; }
       response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ data, ...(meta ? { meta } : {}) }));
@@ -70,8 +77,19 @@ for (const scenario of ["lost_ack", "changed_receipt", "foreign_question", "canc
     globalThis.fetch = ((url, init) => { const address = new URL(String(url)); return original("http://127.0.0.1:" +
       (server.address() as any).port + address.pathname.replace("/api/v1/console", "") + address.search, init); }) as typeof fetch;
     try {
-      const job = store.enqueue(jobInput.parse({ projectId: project.id, kind: "measure", provider: "console", maxCostUsd: 0.5 }), "selected");
-      await runner.tick(); assert.equal(store.job(job.id).error, "approval"); assert.equal(purchases, 0);
+      const job = store.enqueue(jobInput.parse({ projectId: project.id, kind: "measure", provider: "console", maxCostUsd: scenario === 'subcredit_budget' ? 0.39999999999999997 : 0.5 }), "selected");
+      // Installed selected-question checks retain their original operation on resume.
+      store.setStep(job.id, 'console-measurement-profile', 'done', 'selected_questions');
+      await runner.tick();
+      if (scenario === 'subcredit_budget') {
+        assert.equal(store.job(job.id).error, 'budget');
+        assert.equal(purchases, 0);
+        assert.equal(store.observations(project.id).length, 0);
+        assert.equal(store.step(job.id, 'console-measurement-approval'), undefined);
+        assert.equal(store.step(job.id, 'console-measurement-submission'), undefined);
+        return;
+      }
+      assert.equal(store.job(job.id).error, "approval"); assert.equal(purchases, 0);
       assert.equal(store.observations(project.id).length, 0);
       store.updateProject(project.id, { ...project, prompts: ["A later project edit must not change this check."] });
       runner.resume(job.id, true); await runner.tick();
@@ -97,9 +115,17 @@ for (const scenario of ["lost_ack", "changed_receipt", "foreign_question", "canc
       assert.equal(observations.length, 1); assert.equal(observations[0].prompt, prompts[0]);
       assert.equal(observations[0].observedAt, "2026-10-08T08:00:00Z");
       assert.equal(observations[0].surface, "consumer_interface"); assert.equal(observations[0].costUsd, null);
+      assert.equal(observations[0].webSearchConfirmed, scenario === 'changed_receipt' ? false : scenario === 'lost_ack' ? true : undefined);
+      assert.deepEqual(observations[0].searchQueries, ['report sharing', 'report sharing', 'q'.repeat(501), ...Array.from({ length: 21 }, (_, i) => 'report tool ' + i)]);
       assert.deepEqual((store.job(job.id).result as any).metrics,
         { requested: 2, completed: 1, missing: 1, mentionRate: 100, citationRate: 100, citations: 1 });
       assert.equal(store.findings(project.id).length, 0);
+      assert.deepEqual(observations[0].retrievedSources, scenario === 'lost_ack' ? undefined :
+        [{ url: "https://research.example.org/tools", title: "Research tools" }]);
+      const restored = importProject(store, exportProject(store, project.id));
+      assert.deepEqual(store.observations(restored.project.id)[0].retrievedSources, observations[0].retrievedSources);
+      assert.deepEqual(store.observations(restored.project.id)[0].searchQueries, observations[0].searchQueries);
+      assert.equal(store.observations(restored.project.id)[0].webSearchConfirmed, observations[0].webSearchConfirmed);
       await runner.tick(); assert.equal(purchases, 1);
     } finally {
       globalThis.fetch = original; connections.close(); await runner.stop(); store.close();

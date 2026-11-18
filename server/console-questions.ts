@@ -1,19 +1,18 @@
 import { z } from "zod";
 import { ProviderError, type Job, type Project } from "./contracts.js";
-import { publicUrl } from "./network.js";
+import { publicUrl, isPublicEvidenceUrl } from "./network.js";
 import { consoleManaged, managedJob } from "./console-managed.js";
 import type { Runner } from "./workflows.js";
 
-const source = z.object({ url: z.string().url().refine(value => {
-  try { publicUrl(value); return true; } catch { return false; }
-}), title: z.string().max(1000), observed_at: z.string().datetime({ offset: true }) });
+const source = z.object({ url: z.string().refine(isPublicEvidenceUrl),
+  title: z.string().max(1000), observed_at: z.string().datetime({ offset: true }) });
 const result = z.object({ job: managedJob, review_complete: z.literal(true),
   locale: z.string().max(40), pages_read: z.number().int().min(1).max(6),
   questions: z.array(z.object({ text: z.string().trim().min(10).max(500), sources: z.array(source).min(1).max(6) })).max(20) });
 
 /** Only reviewed suggestions with owned source evidence reach the selection list. */
 export async function consoleQuestions(runner: Runner, job: Job, project: Project, signal: AbortSignal) {
-  const { output, capability } = await consoleManaged(runner, job, project, signal, () => {
+  const { output } = await consoleManaged(runner, job, project, signal, () => {
     const audit = job.auditJobId ? runner.store.job(job.auditJobId) : null;
     if (!audit || audit.projectId !== project.id || audit.kind !== "audit" || audit.status !== "completed" ||
       JSON.parse(runner.store.step(audit.id, "project")?.body ?? "null")?.domain !== project.domain)
@@ -43,5 +42,5 @@ export async function consoleQuestions(runner: Runner, job: Job, project: Projec
   if (output.locale !== project.locale)
     throw new ProviderError("invalid_response", "The suggestions use a different language setting. No questions were selected.");
   return { version: 4, pagesRead: output.pages_read, auditJobId: job.auditJobId,
-    model: capability?.models.find(model => model.operations.includes("questions"))?.id ?? "managed", questions };
+    model: "managed", questions };
 }

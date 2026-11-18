@@ -8,7 +8,7 @@ Public v1 requires the complete workflow, working desktop/Docker distributions, 
 
 ## GitHub beta scope
 
-Version 0.1.0-beta.6 targets an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
+The GitHub beta targets an unsigned Windows x64 installer and ad hoc signed, unnotarized Mac arm64/x64 DMGs. Source and locally built Docker installation are available separately. Microsoft Store and Mac App Store enrollment are deferred.
 
 Only attach binaries whose exact payload passed confidentiality review and whose actual installation and local workflow were exercised. State the tested host and limitations: an isolated maintainer profile or native hosted runner is not a clean-machine certification. Do not attach untested platforms merely because source tests passed there.
 
@@ -40,6 +40,8 @@ Run `npm test`, `npm run build` and `npm run audit:deps`. The dependency gate fa
 ### 2. Scan source and keep review material private
 
 Run `npm run audit:source` before the first public push. The auditor inventories hidden and untracked files, scans the working tree with pinned Gitleaks and TruffleHog images, and scans all Git refs once a reviewed commit exists. TruffleHog credential verification is disabled and scanner containers have no network. Targeted matching accepts `OPENGEO_CONFIDENTIAL_VALUES_FILE`, a JSON array stored outside the public repository; matching includes raw, URL-encoded, hex and base64 forms, including UTF-16 little-endian and big-endian binary representations.
+
+Install the exact scanner images named in `scripts/scanner-config.mjs` before using Docker scans. The audit never downloads images automatically and mounts the source read-only instead of copying dependencies or builds. On Windows, `OPENGEO_DOCKER_TRANSPORT=wsl` selects the WSL Docker client when needed; ordinary Docker and the pinned native scanners remain supported. Missing or incomplete scanner output blocks publication.
 
 On Windows x64, `OPENGEO_SCANNER_DIR` can select the pinned native release binaries instead. Their exact SHA256 digests are checked before execution, credential verification remains disabled, and receipts explicitly record that the native process is not network isolated. Run native scanners only on the maintainer's trusted machine. Scanner reports and confidential matching inputs remain outside the repository in either mode.
 

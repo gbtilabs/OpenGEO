@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { withoutEvidenceList } from './finding-text.js';
 import { Store } from "./storage.js";
-import { Providers, safeCitations } from "./providers.js";
+import { Providers, safeCitations, otherSearchLinks } from "./providers.js";
 import { crawl, auditFindings, type CrawlPolicies } from "./audit.js";
 import { renderedFetch } from "./render.js";
 import { CrawlBackoff, CrawlDeferred, crawlFetch, publicUrl, sameSiteHost } from "./network.js";
@@ -24,8 +24,9 @@ import { consoleContent } from "./console-content.js";
 import { consoleCompetitors } from "./console-competitors.js";
 import { consoleOpportunities } from "./console-opportunities.js";
 import { consoleMeasurement, collectCancelledMeasurement } from "./console-measurement.js";
-import { consoleCapabilities } from "./console-capabilities.js";
 import { cancelConsoleManaged, managedStep } from "./console-managed.js";
+import { creditUnitUsd, creditsUsd, creditsWithinBudget } from './console-pricing.js';
+import { multiplyUsd, sumUsd, withinUsdBudget } from './usd.js';
 import {
   ProviderError,
   jobInput,
@@ -37,6 +38,14 @@ import {
   type Observation,
   type Model,
 } from "./contracts.js";
+const consoleDomainBinding = z.object({ id: z.string().uuid(), domain: z.string().min(1) });
+
+function boundConsoleDomain(value: unknown, hostname: string) {
+  const parsed = consoleDomainBinding.safeParse(value);
+  if (!parsed.success || parsed.data.domain !== hostname)
+    throw new ProviderError('invalid_response', 'SurfacedBy did not confirm the requested website.');
+  return parsed.data;
+}
 const factsSchema = z.object({
   facts: z.array(
     z.object({ claim: z.string(), evidenceIds: z.array(z.string()).min(1) }),
@@ -178,11 +187,11 @@ export class Runner {
         try {
           const result = await this.providers.console('/scans/' + scan.scan_id + '/cancel', {}, id + ':cancel', AbortSignal.timeout(20000));
           const refund = result.data?.refunded_credits;
-          if (typeof refund !== 'number' || !Number.isFinite(refund) || refund < 0)
+          if (!Number.isSafeInteger(refund) || refund < 0 || !Number.isSafeInteger(scan.credits_charged) || refund > scan.credits_charged)
             throw new Error('Invalid cancellation receipt');
           this.store.updateJob(id, {
             error: null,
-            spentUsd: Math.max(0, this.store.job(id).spentUsd - refund * 0.1),
+            spentUsd: creditsUsd(scan.credits_charged - refund, this.consoleScanCreditUnit(job)),
             progress: refund > 0 ? 'Cancelled on SurfacedBy. Unused credits were returned.' : 'Cancelled on SurfacedBy. Work already started remains billable.',
             result: { cancellation: { refundedCredits: refund, priorStatus: result.data.prior_status } },
           });
@@ -218,7 +227,7 @@ export class Runner {
       other.id !== id && other.kind === 'audit' && other.background && ['queued', 'running', 'paused'].includes(other.status)))
       throw new ProviderError('in_progress', 'Another website discovery is saved for this brand. Follow it in Scans before resuming this one.');
     const scheduledCeiling = scheduledBudgetCeiling(this.store, job);
-    if (scheduledCeiling !== undefined && Math.max(maxCostUsd ?? job.maxCostUsd, job.spentUsd) > scheduledCeiling + 1e-9)
+    if (scheduledCeiling !== undefined && Math.max(maxCostUsd ?? job.maxCostUsd, job.spentUsd) > scheduledCeiling)
       throw new ProviderError("budget", "This run would exceed its approved monthly schedule budget. Keep it paused or start a separately approved manual run.");
     for (const row of this.store.db
       .prepare("SELECT step FROM steps WHERE job_id=? AND state='started'")
@@ -443,7 +452,7 @@ export class Runner {
             "estimate",
             "Set a conservative measurement request estimate in Settings before paid measurements. DataForSEO does not expose a per-request dollar ceiling.",
           );
-        if (live.spentUsd + estimate > job.maxCostUsd)
+        if (!withinUsdBudget(job.maxCostUsd, [live.spentUsd, estimate]))
           throw new ProviderError(
             "budget",
             "The approved measurement budget is insufficient for the next request.",
@@ -471,6 +480,9 @@ export class Runner {
             observedAt: new Date().toISOString(),
             answer: result.text,
             citations: result.citations,
+            retrievedSources: result.retrievedSources,
+            webSearchConfirmed: result.webSearchConfirmed,
+            searchQueries: result.searchQueries,
             surface: "api",
             ...presence(
               project,
@@ -483,7 +495,7 @@ export class Runner {
             this.store.put(answerKind(job), project.id, job.id, observation);
             this.store.updateJob(job.id, {
               spentUsd:
-                this.store.job(job.id).spentUsd + (result.costUsd ?? estimate),
+                sumUsd([this.store.job(job.id).spentUsd, result.costUsd ?? estimate]),
               costBasis: result.costUsd === null ? 'includes_estimates' : this.store.job(job.id).costBasis ?? 'reported',
             });
             this.store.setStep(job.id, "measure:" + i, "done", observation);
@@ -945,14 +957,15 @@ export class Runner {
       const name = "measure:" + index;
       if (this.store.step(job.id, name)?.state === "done") continue;
       const prompt = project.prompts[index], tokenUpper = Buffer.byteLength(instructions + prompt, "utf8") + 1000,
-        estimate = provider === "deepseek" ? deepseekAnswerEstimate(model, tokenUpper, cap) : tokenUpper * model.inputUsd + cap * model.outputUsd;
+        estimate = provider === 'deepseek' ? deepseekAnswerEstimate(model, tokenUpper, cap)
+          : sumUsd([multiplyUsd(model.inputUsd, tokenUpper), multiplyUsd(model.outputUsd, cap)]);
       this.store.updateJob(job.id, { progress: "Collecting answer " + (index + 1) + " of " + project.prompts.length });
       await this.once(job, name, async () => {
         const completion = await this.providers.complete(provider, model.id, instructions, prompt, signal, cap, webSearch, model);
         const observation: Observation = {
           id: randomUUID(), projectId: project.id, jobId: job.id, prompt, provider,
           platform: provider === "chatgpt" ? "chat_gpt" : provider, model: completion.model, locale: project.locale,
-          observedAt: new Date().toISOString(), answer: completion.text, citations: completion.citations, surface: "api",
+          observedAt: new Date().toISOString(), answer: completion.text, citations: completion.citations, retrievedSources: completion.retrievedSources, surface: "api",
           retrieval: webSearch ? "web_search" : "model_only",
           ...(searching ? { webSearchConfirmed: completion.webSearchConfirmed === true } : {}),
           ...(completion.searchQueries?.length ? { searchQueries: completion.searchQueries } : {}),
@@ -960,7 +973,7 @@ export class Runner {
         };
         this.store.db.transaction(() => {
           this.store.put(answerKind(job), project.id, job.id, observation);
-          this.store.updateJob(job.id, { spentUsd: this.store.job(job.id).spentUsd + (completion.costUsd ?? estimate),
+          this.store.updateJob(job.id, { spentUsd: sumUsd([this.store.job(job.id).spentUsd, completion.costUsd ?? estimate]),
             costBasis: completion.costUsd === null || completion.costEstimated ? "includes_estimates" : this.store.job(job.id).costBasis ?? "reported" });
           this.store.setStep(job.id, name, "done", observation);
         })();
@@ -969,7 +982,7 @@ export class Runner {
         return observation;
       }, () => {
         if (tokenUpper + cap > model.contextLength) throw new ProviderError("context", "Choose a model with a larger context window.");
-        if (this.store.job(job.id).spentUsd + estimate > job.maxCostUsd) throw new ProviderError("budget", "The approved budget is insufficient for the next answer.");
+        if (!withinUsdBudget(job.maxCostUsd, [this.store.job(job.id).spentUsd, estimate])) throw new ProviderError("budget", "The approved budget is insufficient for the next answer.");
       });
     }
     const collection = this.checkpointApiMeasurement(job, project);
@@ -1048,7 +1061,7 @@ export class Runner {
     const text = JSON.stringify(input),
       cap = Math.min(4096, model.maxOutputTokens ?? 4096),
       tokenUpper = Buffer.byteLength(text + prompts[name], "utf8") + 1000,
-      estimate = tokenUpper * model.inputUsd + cap * model.outputUsd;
+      estimate = sumUsd([multiplyUsd(model.inputUsd, tokenUpper), multiplyUsd(model.outputUsd, cap)]);
     return this.once(job, receiptKey, async () => {
       const completion = await this.providers.complete(
         job.provider!,
@@ -1063,8 +1076,8 @@ export class Runner {
       this.store.db.transaction(() => {
         this.store.updateJob(job.id, {
           spentUsd:
-            this.store.job(job.id).spentUsd +
-            (completion.costUsd ?? (job.provider === "chatgpt" ? 0 : estimate)),
+            sumUsd([this.store.job(job.id).spentUsd,
+              completion.costUsd ?? (job.provider === "chatgpt" ? 0 : estimate)]),
           costBasis: completion.costUsd === null && job.provider !== 'chatgpt' ? 'includes_estimates' : this.store.job(job.id).costBasis ?? 'reported',
         });
         this.store.put("pass", job.projectId, job.id, {
@@ -1094,41 +1107,30 @@ export class Runner {
     }, () => {
       if (tokenUpper + cap > model.contextLength)
         throw new ProviderError('context', 'This model cannot hold the evidence. Select a model with a larger context window.');
-      if (this.store.job(job.id).spentUsd + estimate > job.maxCostUsd)
+      if (!withinUsdBudget(job.maxCostUsd, [this.store.job(job.id).spentUsd, estimate]))
         throw new ProviderError('budget', 'The approved budget is insufficient for the next analysis pass.');
     });
   }
   async consoleMeasure(job: Job, project: Project, signal: AbortSignal) {
     const savedProfile = this.store.step(job.id, "console-measurement-profile");
     const profile = savedProfile?.body ? JSON.parse(savedProfile.body) : this.store.step(job.id, "console-scan") ? "full_check"
-      : await this.once(job, "console-measurement-profile", async () => {
-        const capability = consoleCapabilities((await this.providers.console("/capabilities", undefined, undefined, signal)).data);
-        const platform = job.platform === "chat_gpt" ? "chatgpt" : job.platform;
-        return capability.operations.includes("measurement") && capability.selected_question_platforms.includes(platform as "chatgpt" | "gemini")
-          ? "selected_questions" : "full_check";
-      });
+      : await this.once(job, "console-measurement-profile", async () => job.kind === 'ask' ? 'selected_questions' : 'full_check');
     if (profile === "selected_questions") return consoleMeasurement(this, job, project, signal);
     if (job.kind === "ask")
       throw new ProviderError("capability", "This SurfacedBy connection cannot answer a single question on this AI platform. Choose another engine.");
     const platform = job.platform === 'chat_gpt' ? 'chatgpt' : job.platform;
+    const priorScan = this.store.step(job.id, 'console-scan');
     if (this.store.step(job.id, 'console-scan')?.state !== 'done') {
       const capability = await this.providers.console('/capabilities', undefined, undefined, signal);
       if (!capability.data?.platforms?.some((p: any) => p.key === platform && p.enabled === true))
         throw new ProviderError('capability', 'This AI platform is not available on your SurfacedBy connection. Select an enabled platform.');
+      if (!priorScan || priorScan.state === 'rejected') {
+        const rate = creditUnitUsd(capability.data?.pricing?.credit_usd);
+        this.store.setStep(job.id, 'console-scan-credit-usd', 'done', rate);
+      }
     }
-    const domain = await this.once(job, "console-domain", async () => {
-      const list = await this.consolePages("/domains", signal);
-      const existing = list.find((d: any) => d.domain === project.domain);
-      if (existing) return existing;
-      return (
-        await this.providers.console(
-          "/domains",
-          { domain: project.domain },
-          job.id + ":domain",
-          signal,
-        )
-      ).data;
-    });
+    const unitUsd = this.consoleScanCreditUnit(job);
+    const domain = await this.consoleDomain(job, project.domain, signal);
     await this.once(job, "console-brand", async () =>
       this.providers.console(
         "/domains/" + domain.id + "/brand",
@@ -1155,7 +1157,7 @@ export class Runner {
       domain_id: domain.id,
       platforms: [platform],
       keywords: project.prompts,
-      max_credits: Math.floor((job.maxCostUsd + Number.EPSILON) / 0.1),
+      max_credits: creditsWithinBudget(job.maxCostUsd, unitUsd),
     };
     if (this.store.step(job.id, "console-scan")?.state !== "done") {
       const preview = await this.providers.console(
@@ -1175,7 +1177,7 @@ export class Runner {
         );
       if (!Number.isSafeInteger(preview.data?.query_count) || preview.data.query_count < 1)
         throw new ProviderError("estimate", "The API did not return the number of answers in this check. No check was submitted.");
-      if (credits * 0.1 > job.maxCostUsd)
+      if (creditsUsd(credits, unitUsd) > job.maxCostUsd)
         throw new ProviderError(
           "budget",
           "The approved budget is insufficient for this SurfacedBy check.",
@@ -1195,9 +1197,9 @@ export class Runner {
         "SurfacedBy did not confirm this check. Review SurfacedBy Console before continuing.",
         true,
       );
-    if (typeof scan.credits_charged !== 'number' || !Number.isFinite(scan.credits_charged) || scan.credits_charged < 0)
+    if (!Number.isSafeInteger(scan.credits_charged) || scan.credits_charged < 0)
       throw new ProviderError('cost_unknown', 'SurfacedBy did not confirm the charge for this check. Review it in SurfacedBy Console before continuing.', true);
-    this.store.updateJob(job.id, { spentUsd: scan.credits_charged * 0.1 });
+    this.store.updateJob(job.id, { spentUsd: creditsUsd(scan.credits_charged, unitUsd) });
     let state;
     for (let n = 0; n < 180; n++) {
       signal.throwIfAborted();
@@ -1280,6 +1282,7 @@ export class Runner {
             observedAt: row.observed_at ?? state.completed_at,
             answer: row.answer_text,
             citations,
+            retrievedSources: otherSearchLinks(row.retrieved_sources, citations),
             surface: ["api", "consumer_interface"].includes(row.surface) ? row.surface : "unknown",
             mentioned: ["cited", "named"].includes(row.presence),
             cited: row.presence === "cited",
@@ -1332,6 +1335,39 @@ export class Runner {
       ),
     };
   }
+  private consoleScanCreditUnit(job: Job) {
+    const price = this.store.step(job.id, 'console-scan-credit-usd');
+    if (price?.state === 'done') return creditUnitUsd(JSON.parse(price.body!));
+    // Earlier installed versions submitted full checks under the fixed 2026-09-30 valuation.
+    // Only an existing submission can use that historical rate during recovery or cancellation.
+    if (this.store.step(job.id, 'console-scan')) return 0.1;
+    throw new ProviderError('estimate', 'The price for this check is missing. Nothing was submitted.');
+  }
+  async findConsoleDomain(hostname: string, signal: AbortSignal) {
+    const list = consoleDomainBinding.array().safeParse(await this.consolePages('/domains', signal));
+    if (!list.success) throw new ProviderError('invalid_response', 'SurfacedBy returned an incomplete website list.');
+    return list.data.find(row => row.domain === hostname);
+  }
+
+  async consoleDomain(job: Job, hostname: string, signal: AbortSignal) {
+    const saved = await this.once(job, 'console-domain', async () => {
+      const existing = await this.findConsoleDomain(hostname, signal);
+      if (existing) return existing;
+      try {
+        const created = await this.providers.console('/domains', { domain: hostname }, job.id + ':domain', signal);
+        return boundConsoleDomain(created.data, hostname);
+      } catch (error) {
+        // Another client may register the website between our list and create calls.
+        if (error instanceof ProviderError && error.httpStatus === 409 && error.remoteCode === 'domain_already_tracked') {
+          const winner = await this.findConsoleDomain(hostname, signal);
+          if (winner) return winner;
+        }
+        throw error;
+      }
+    });
+    return boundConsoleDomain(saved, hostname);
+  }
+
   async consolePages(path: string, signal: AbortSignal) {
     const rows: any[] = [];
     let cursor: string | undefined;
@@ -1349,7 +1385,9 @@ export class Runner {
         undefined,
         signal,
       );
-      rows.push(...(result.data ?? []));
+      if (!Array.isArray(result?.data) || (result.meta?.next_cursor != null && typeof result.meta.next_cursor !== 'string'))
+        throw new ProviderError("invalid_response", "SurfacedBy returned an incomplete list. Try again shortly.");
+      rows.push(...result.data);
       cursor = result.meta?.next_cursor;
       if (cursor && seen.has(cursor))
         throw new ProviderError(

@@ -5,6 +5,71 @@ import { jobInput, ProviderError } from '../server/contracts.js';
 import { deepseekAnswerEstimate, deepseekComplete, deepseekModels, isPeak, maxSearches } from '../server/deepseek.js';
 import { answer, answerReply, costOf, fakeDeepSeek, fixture, headers, key, question, toolReply, type Script } from './deepseek-fixture.js';
 
+test('an oversized tool conversation stops before buying more context', async () => {
+  const reply = toolReply(['example reports']);
+  reply.choices[0].message.content = 'x'.repeat(400_000);
+  const script: Script = { requests: [], replies: [reply, answerReply(answer)] };
+  const original = globalThis.fetch;
+  globalThis.fetch = fakeDeepSeek(script);
+  try {
+    await assert.rejects(deepseekComplete(key, 'deepseek-flash', 'Answer.', question, new AbortController().signal, 4096, true),
+      (error: unknown) => error instanceof ProviderError && error.code === 'budget' && error.uncertain);
+    assert.equal(script.requests.filter(r => r.path === '/chat/completions').length, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+for (const failure of [{ searchStatus: 402 }, { searchStatus: 429 }, { dropSearch: true }]) {
+  test('a search failure after a paid chat retains the request for review: ' + JSON.stringify(failure), async () => {
+    const script: Script = { requests: [], replies: [toolReply(['example reports']), answerReply(answer)], ...failure };
+    const f = await fixture(script);
+    try {
+      const created = await f.ask({ question, engines: ['deepseek'], maxCostUsd: 1 });
+      assert.equal(created.statusCode, 200);
+      await f.runner.tick();
+      const row = (await f.read(created.json().askId)).engines[0];
+      assert.equal(row.state, 'paused');
+      assert.equal(f.chats().length, 1, 'a failed search cannot cause another paid chat');
+      const preview = (await f.app.inject({ url: `/api/jobs/${row.jobId}/resume-preview`, headers })).json();
+      assert.equal(preview.uncertainRequests, 1, 'earlier paid usage requires review even after a definite search refusal');
+      await f.runner.tick();
+      assert.equal(f.chats().length, 1);
+    } finally { await f.close(); }
+  });
+}
+
+test('citations require returned search evidence and other retrieved sources remain available', async () => {
+  const script: Script = { requests: [], replies: [toolReply(['example reports']), answerReply('See https://example.com/invented and https://example.org/compare.')] };
+  const f = await fixture(script);
+  try {
+    const created = await f.ask({ question, engines: ['deepseek'], maxCostUsd: 1 });
+    await f.runner.tick();
+    const row = (await f.read(created.json().askId)).engines[0];
+    assert.equal(row.state, 'answered');
+    assert.equal(row.answer.cited, false);
+    assert.deepEqual(row.answer.citations.map((link: any) => link.url), ['https://example.org/compare']);
+    assert.deepEqual(row.answer.retrievedSources.map((link: any) => link.url), ['https://example.com/reports']);
+    assert.match(row.answer.answer, /example.com\/invented/, 'the original answer stays intact');
+  } finally { await f.close(); }
+});
+
+test('an unusable nonempty search is charged and missing chat usage stops further purchases', async () => {
+  const original = globalThis.fetch;
+  const at = new Date('2026-11-09T02:30:00Z');
+  try {
+    globalThis.fetch = fakeDeepSeek({ requests: [], replies: [toolReply(['example reports']), answerReply(answer)], searchResults: [{ url: 'http://127.0.0.1/private' }] });
+    const result = await deepseekComplete(key, 'deepseek-flash', 'Answer.', question, new AbortController().signal, 4096, true, () => at);
+    assert.ok(Math.abs(result.costUsd! - costOf(2, 1, at)) < 1e-9);
+    assert.deepEqual(result.links, []);
+    assert.equal(result.webSearchConfirmed, false);
+    const reply = toolReply(['example reports']);
+    const script: Script = { requests: [], replies: [{ ...reply, usage: undefined }] };
+    globalThis.fetch = fakeDeepSeek(script);
+    await assert.rejects(deepseekComplete(key, 'deepseek-flash', 'Answer.', question, new AbortController().signal, 4096, true),
+      (error: unknown) => error instanceof ProviderError && error.code === 'cost_unknown' && error.uncertain);
+    assert.equal(script.requests.length, 1);
+  } finally { globalThis.fetch = original; }
+});
+
 test('a DeepSeek ask runs its own searches, cites links in the answer, records an estimated cost and stays out of evidence', async () => {
   const script: Script = { requests: [], replies: [toolReply(['free example report tools']), toolReply(['nothing matches this']), answerReply(answer)] };
   const f = await fixture(script);
@@ -15,7 +80,10 @@ test('a DeepSeek ask runs its own searches, cites links in the answer, records a
     await f.runner.tick();
     const result = await f.read(created.json().askId), row = result.engines[0];
     assert.equal(row.state, 'answered');
-    assert.deepEqual([row.answer.provider, row.answer.platform, row.answer.surface, row.answer.retrieval, row.answer.webSearchConfirmed], ['deepseek', 'deepseek', 'api', 'web_search', true]);
+    const stored = f.store.answers(f.project.id, row.jobId, 'ask-answer')[0];
+    assert.deepEqual([stored.provider, stored.platform, stored.surface, stored.retrieval, stored.webSearchConfirmed], ['deepseek', 'deepseek', 'api', 'web_search', true]);
+    assert.equal(row.answer.surface, undefined, 'collection internals stay out of public results');
+    assert.equal(row.answer.model, undefined, 'model identifiers stay out of public results');
     assert.deepEqual(row.answer.citations.map((c: any) => c.url), ['https://example.com/reports', 'https://example.org/compare']);
     assert.equal(row.answer.citations[0].title, 'Example reports');
     assert.deepEqual(row.answer.searchQueries, ['free example report tools', 'nothing matches this']);
@@ -82,9 +150,9 @@ test('the worst-case estimate bounds an answer, and a share below it stops befor
   const f = await fixture(script);
   try {
     const created = await f.ask({ question, engines: ['deepseek'], maxCostUsd: 0.02 });
+    assert.equal(created.statusCode, 409, 'the group approval is refused before creating jobs');
     await f.runner.tick();
-    const row = (await f.read(created.json().askId)).engines[0];
-    assert.equal(f.store.job(row.jobId).error, 'budget');
+    assert.equal(f.store.jobs(f.project.id).length, 0);
     assert.equal(f.chats().length, 0);
   } finally { await f.close(); }
 });

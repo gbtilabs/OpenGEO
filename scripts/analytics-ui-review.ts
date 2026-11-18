@@ -174,9 +174,9 @@ try {
     /synthetic-ui-model|en-US|API/,
   );
   await page.locator(".measurement-scope summary").click();
-  assert.match(
+  assert.doesNotMatch(
     await page.locator(".measurement-scope").innerText(),
-    /synthetic-ui-model/,
+    /synthetic-ui-model|Models:|Collected through:|Model connection/,
   );
   await page.locator(".measurement-scope summary").click();
   await page
@@ -191,6 +191,26 @@ try {
   );
   await page.locator(".visibility-chart circle[role=button]").first().focus();
   assert.match(await page.locator(".chart-readout").innerText(), /25\.0%/);
+  const mentionsLegend = page.getByRole('button', { name: /^Brand mentions / });
+  const citationsLegend = page.getByRole('button', { name: /^Website citations / });
+  await citationsLegend.click();
+  assert.equal(await citationsLegend.getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('.visibility-chart > svg path[fill="none"]').count(), 2);
+  await mentionsLegend.click();
+  assert.equal(await mentionsLegend.getAttribute('aria-pressed'), 'true', 'The last visible series stays visible');
+  await citationsLegend.click();
+  assert.equal(await page.locator('.visibility-chart > svg path[fill="none"]').count(), 4);
+  const exploreChecks = page.getByRole('slider', { name: 'Explore visibility checks' });
+  await exploreChecks.focus();
+  await exploreChecks.press('Home');
+  await exploreChecks.press('ArrowRight');
+  await exploreChecks.press('ArrowRight');
+  assert.match(await page.locator('.chart-readout').innerText(), /Incomplete check.*No comparable rate/);
+  await exploreChecks.press('End');
+  assert.match(await page.locator('.chart-readout').innerText(), /75\.0%/);
+  assert.equal(await page.locator('.chart-end-label').count(), 2);
+  await page.locator('.visibility-chart > svg').hover({ position: { x: 45, y: 90 } });
+  assert.match(await page.locator('.chart-readout').innerText(), /25\.0%/);
   await page.getByText("View chart data", { exact: true }).click();
   assert.equal(await page.locator(".chart-data tbody tr").count(), 5);
   assert.match(
@@ -217,7 +237,7 @@ try {
       "Settings",
     ]) {
       await navigate(page, view);
-      await page.getByRole("heading", { name: view, exact: true }).waitFor();
+      await page.getByRole("heading", { name: view === 'Topics' ? 'Prompts' : view, exact: true }).waitFor();
       await page.waitForFunction(
         () => document.querySelector("main")?.scrollTop === 0,
       );
@@ -321,7 +341,7 @@ try {
     await page.getByRole("heading", { name: topic.name, exact: true }).waitFor();
     for (const tab of ["Results", "Questions", "Target pages", "Competitors", "Checks"]) {
       await page.getByRole("tab", { name: new RegExp("^" + tab) }).click();
-      if (tab === "Target pages") assert.match(await page.getByRole("tabpanel").innerText(), /Cited in 2 of 3 answers/);
+      if (tab === "Target pages") assert.match(await page.locator('#topic-view').innerText(), /Cited in 2 of 3 answers/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Topic ${tab} at ${width}px`);
       await page.screenshot({ path: join(output, `topic-${tab.toLowerCase().replaceAll(" ", "-")}-${width}.png`), fullPage: true });
     }
@@ -562,7 +582,7 @@ try {
     await page.getByRole('option', { name: /example.org/ }).click();
     for (const view of ['Overview', 'Visibility', 'Topics', 'Responses', 'Sources', 'Competitors', 'Scans', 'Opportunities', 'Content', 'Reports']) {
       await navigate(page, view);
-      await page.getByRole('heading', { name: view, exact: true }).waitFor();
+      await page.getByRole('heading', { name: view === 'Topics' ? 'Prompts' : view, exact: true }).waitFor();
       await page.locator('.workspace-loading').waitFor({ state: 'hidden' });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${view} empty at ${width}px`);
       await page.screenshot({ path: join(output, `${view.toLowerCase()}-empty-${width}.png`) });

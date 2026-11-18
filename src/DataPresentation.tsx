@@ -11,10 +11,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { SiteIcon } from "./SiteIcon";
+import { AnswerSources } from './AnswerSources';
 import { markdownHtml, markdownSummary } from '../server/markdown';
 import { targetDomain } from './finding-groups';
 import { FileText, ListChecks, Braces } from "lucide-react";
-import type { Job, Observation } from "../server/contracts";
+import type { Job } from "../server/contracts";
+import type { PublicObservation as Observation } from '../server/public-results';
 import { completedMeasurement, measurementTime, portableJobResult } from "../server/portable-results";
 import type {
   Presentation,
@@ -25,8 +27,6 @@ import {
   platformLabel,
   ProviderIcon,
   providerLabels,
-  retrievalLabel,
-  collectionLabel,
 } from "./provider-ui";
 import "./analytics.css";
 import { Dialog } from './ui/Dialog';
@@ -53,11 +53,6 @@ export function MeasurementScope({
   missing: number;
 }) {
   const latest = observations.at(-1);
-  const models = [
-    ...new Set(observations.map((observation) => observation.model)),
-  ];
-  const retrieval = [...new Set(observations.map(retrievalLabel))];
-  const collection = [...new Set(observations.map(collectionLabel))];
   return (
     <div className="measurement-scope" aria-label="Current measurement scope">
       {measurement.provider &&
@@ -91,14 +86,6 @@ export function MeasurementScope({
           About this check <ChevronDown size={13} />
         </summary>
         <div>
-          <p>
-            Models:{" "}
-            {models.length
-              ? models.join(", ")
-              : (measurement.model ?? "Provider selected")}
-          </p>
-          {retrieval.length > 0 && <p>{retrieval.join(" / ")}</p>}
-          {collection.length > 0 && <p>Collected through: {collection.join(" / ")}</p>}
           {latest?.locale && (
             <p>Answer language: {languageName(latest.locale)}</p>
           )}
@@ -108,7 +95,7 @@ export function MeasurementScope({
           <p>
             Rates use collected answers. Missing answers are not counted as
             absent mentions. Answers vary by time, location and account.
-            Comparisons use the same collection method.
+            Trends compare checks with matching settings.
           </p>
         </div>
       </details>
@@ -142,6 +129,7 @@ export function VisibilityChart({
 }) {
   const [selected, setSelected] = useState<string | null>(null),
     id = useId();
+  const [hiddenSeries, setHiddenSeries] = useState<string | null>(null);
   const history = presentation.history;
   const chartRef = useRef<SVGSVGElement>(null),
     [chartWidth, setChartWidth] = useState(600);
@@ -156,8 +144,10 @@ export function VisibilityChart({
   }, [history.length > 0]);
   const active =
     history.find((point) => point.jobId === selected) ?? history.at(-1);
+  const activeIndex = active ? history.indexOf(active) : 0;
+  const latest = history.at(-1);
   const left = 43,
-    right = chartWidth - 20,
+    right = chartWidth - 72,
     top = 18,
     bottom = 175;
   const start = history.length ? Date.parse(history[0].at) : 0;
@@ -172,6 +162,15 @@ export function VisibilityChart({
     { key: "mentionRate", label: "Brand mentions", color: "var(--mention)" },
     { key: "citationRate", label: "Website citations", color: "var(--citation)" },
   ] as const;
+  const visibleSeries = series.filter(s => s.key !== hiddenSeries);
+  const endLabels = visibleSeries.flatMap(s => latest?.[s.key] == null ? [] : [{ ...s, value: latest[s.key]!, position: y(latest[s.key]!) }]).sort((a, b) => a.position - b.position);
+  // Keep close end values legible without moving the actual measured points.
+  if (endLabels.length === 2 && endLabels[1].position - endLabels[0].position < 26) {
+    const middle = Math.max(top + 13, Math.min(bottom - 13, (endLabels[0].position + endLabels[1].position) / 2));
+    endLabels[0].position = middle - 13;
+    endLabels[1].position = middle + 13;
+  }
+  const gapLabel = (point: typeof history[number]) => point.topic ? `Topic check: ${point.topic}. Not comparable with the whole brand.` : 'Incomplete check. No comparable rate.';
   function segments(key: "mentionRate" | "citationRate") {
     const paths: { line: string; area: string }[] = [];
     let path = "", first = 0, last = 0;
@@ -199,10 +198,12 @@ export function VisibilityChart({
         <div className="visibility-chart">
           <div className="chart-legend">
             {series.map((s) => (
-              <span key={s.key}>
-                <i style={{ background: s.color }} />
+              <button key={s.key} type="button" aria-pressed={hiddenSeries !== s.key}
+                onClick={() => setHiddenSeries(current => current === s.key ? null : current === null ? s.key : current)}>
+                <i style={{ background: hiddenSeries === s.key ? 'var(--border-strong)' : s.color }} aria-hidden="true" />
                 {s.label}
-              </span>
+                <strong>{percent(latest?.[s.key] ?? null)}</strong>
+              </button>
             ))}
           </div>
           <svg
@@ -210,14 +211,21 @@ export function VisibilityChart({
             viewBox={`0 0 ${chartWidth} 205`}
             aria-labelledby={id}
             role="group"
+            onPointerMove={event => {
+              if (event.pointerType === 'touch' && !event.isPrimary) return;
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const pointerX = (event.clientX - bounds.left) * chartWidth / bounds.width;
+              const nearest = history.reduce((best, _, index) => Math.abs(x(index) - pointerX) < Math.abs(x(best) - pointerX) ? index : best, 0);
+              setSelected(history[nearest].jobId);
+            }}
           >
             <title id={id}>
               Mention and citation rates in comparable checks. Percentages range
               from zero to one hundred. Missing checks are gaps.
             </title>
             <defs>{series.map(s => <linearGradient key={s.key} id={id + s.key} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style={{ stopColor: s.color }} stopOpacity=".14" /><stop offset="100%" style={{ stopColor: s.color }} stopOpacity=".015" /></linearGradient>)}</defs>
-            {history.map((point, index) => point.mentionRate === null && point.citationRate === null ? <g key={point.jobId} className="chart-missing"><rect x={x(index) - 10} y={top} width="20" height={bottom - top} fill="var(--surface-3)" /><line x1={x(index)} x2={x(index)} y1={top} y2={bottom} stroke="var(--border-strong)" strokeDasharray="3 4" /><title>{dateTime(point.at)}: incomplete check, no comparable rate</title></g> : null)}
-            {[0, 25, 50, 75, 100].map((tick) => (
+            {history.map((point, index) => point.mentionRate === null && point.citationRate === null ? <g key={point.jobId} className="chart-missing"><rect x={x(index) - 8} y={top} width="16" height={bottom - top} fill="var(--surface-3)" /><line x1={x(index)} x2={x(index)} y1={top} y2={bottom} stroke="var(--border-strong)" strokeDasharray="3 4" /><title>{dateTime(point.at)}: {gapLabel(point)}</title></g> : null)}
+            {(chartWidth < 480 ? [0, 50, 100] : [0, 25, 50, 75, 100]).map((tick) => (
               <g key={tick}>
                 <line
                   x1={left}
@@ -231,14 +239,15 @@ export function VisibilityChart({
                 </text>
               </g>
             ))}
-            {series.map((s) => (
+            {active && <line className="chart-reading-guide" x1={x(activeIndex)} x2={x(activeIndex)} y1={top} y2={bottom} stroke="var(--border-strong)" strokeDasharray="3 4" aria-hidden="true" />}
+            {visibleSeries.map((s) => (
               <g key={s.key}>
                 {segments(s.key).map((path, index) => (
-                  <g key={index}><path d={path.area} fill={`url(#${id + s.key})`} /><path
+                  <g key={index}>{visibleSeries.length === 1 && <path d={path.area} fill={`url(#${id + s.key})`} />}<path
                     d={path.line}
                     fill="none"
                     style={{ stroke: s.color }}
-                    strokeWidth="2.5"
+                    strokeWidth={s.key === 'mentionRate' ? 3 : 2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   /></g>
@@ -285,6 +294,11 @@ export function VisibilityChart({
                 )}
               </g>
             ))}
+            {endLabels.map(s => <g key={s.key} className="chart-end-label" aria-label={`${s.label}, latest check: ${percent(s.value)}`}>
+              <line x1={x(history.length - 1) + 6} y1={y(s.value)} x2={right + 13} y2={s.position} stroke={s.color} strokeOpacity=".45" />
+              <rect x={right + 13} y={s.position - 11} width="52" height="22" rx="6" fill="var(--surface)" stroke="var(--border)" />
+              <text x={right + 39} y={s.position + 4} textAnchor="middle" style={{ fill: s.color }}>{percent(s.value)}</text>
+            </g>)}
             {axisLabels(history.map((_, index) => x(index))).map((index) => (
               <text
                 key={history[index].jobId}
@@ -305,12 +319,19 @@ export function VisibilityChart({
               <span>
                 Citations <strong>{percent(active.citationRate)}</strong>
               </span>
+              <small>{active.mentionRate === null && active.citationRate === null ? gapLabel(active) : `${active.collected} of ${active.requested} answers collected`}</small>
             </div>
           )}
+          {history.length > 1 && <label className="chart-scrubber">
+            <span>Explore checks <span>{activeIndex + 1} of {history.length}</span></span>
+            <input type="range" min="0" max={history.length - 1} step="1" value={activeIndex}
+              aria-label="Explore visibility checks" aria-valuetext={active ? `${dateTime(active.at)}. Mentions ${percent(active.mentionRate)}. Citations ${percent(active.citationRate)}.` : undefined}
+              onChange={event => setSelected(history[Number(event.target.value)].jobId)} />
+          </label>}
           <p className="chart-note">
             {history.length === 1
               ? "One check so far; recheck to see a trend."
-              : history.some(point => point.mentionRate === null || point.citationRate === null) ? "Comparable checks only. Shaded gaps mark incomplete checks, not a fall to zero." : "Comparable checks only. Select a point to see its results."}
+              : history.some(point => point.mentionRate === null || point.citationRate === null) ? "Gaps mark incomplete or differently scoped checks, not a fall to zero." : "Comparable checks only. Point to the chart or use the slider to explore."}
           </p>
           <details className="chart-data">
             <summary>
@@ -700,7 +721,7 @@ export function AnswerCard({ observation: o }: { observation: Observation }) {
   const [detailTab, setDetailTab] = useState<'answer' | 'sources' | 'searches'>('answer');
   const detailId = useId();
   const sources = o.citations.filter((c) => targetDomain(c.url));
-  const searches = [...new Set(o.searchQueries ?? [])];
+  const searches = o.searchQueries ?? [];
   const domains = [...new Set(sources.map((c) => targetDomain(c.url)!))];
   return (
     <article className="answer compact-answer">
@@ -722,21 +743,11 @@ export function AnswerCard({ observation: o }: { observation: Observation }) {
       <button className="text-button answer-open" onClick={() => { setDetailTab('answer'); setOpen(true); }}>Read full answer and sources <ArrowRight size={14} /></button>
       {open && <Dialog title="Answer and sources" close={() => setOpen(false)} variant="drawer"><div className="answer-reader">
         <div className="answer-reader-heading"><span><ProviderIcon provider={o.platform} size={20} />{platformLabel(o.platform)}<time dateTime={o.observedAt}>{dateTime(o.observedAt)}</time></span><h3>{o.prompt}</h3><p>{o.cited ? 'This answer links to your website.' : o.mentioned ? 'This answer names your brand without linking to your website.' : 'Your brand was not detected in this answer.'}</p></div>
-        <Tabs label="Answer details" panelId={detailId} value={detailTab} onChange={setDetailTab} items={[{ value: 'answer', label: 'Answer', icon: FileText }, { value: 'sources', label: 'Sources', icon: Link, count: sources.length }, { value: 'searches', label: 'Searches', icon: Search, count: searches.length }]} />
+        <Tabs label="Answer details" panelId={detailId} value={detailTab} onChange={setDetailTab} items={[{ value: 'answer', label: 'Answer', icon: FileText }, { value: 'sources', label: 'Sources', icon: Link, count: sources.length + (o.retrievedSources?.length ?? 0) }, { value: 'searches', label: 'Searches', icon: Search, count: searches.length || undefined }]} />
         <div className="answer-detail-panel" id={detailId} role="tabpanel" aria-label={detailTab === 'answer' ? 'Answer' : detailTab === 'sources' ? 'Sources' : 'Searches'}>
         {detailTab === 'answer' ? <div className="document-preview answer-document" lang={o.locale} dir={['ar', 'fa', 'he', 'ur'].includes(o.locale.split('-')[0]) ? 'rtl' : 'ltr'} dangerouslySetInnerHTML={{ __html: markdownHtml(o.answer) }} /> : detailTab === 'sources' ? <>
-        {!sources.length && <p>This answer contains no source links. Its claims still need independent verification.</p>}
-        <ul className="answer-sources">
-          {sources.map((c, index) => (
-            <li key={index}>
-              <a href={c.url} target="_blank" rel="noreferrer">
-                <SiteIcon projectId={o.projectId} domain={targetDomain(c.url)!} size={24} />
-                <span><strong>{c.title || targetDomain(c.url)}</strong>{c.title && <small>{targetDomain(c.url)}</small>}</span>
-                <ExternalLink size={12} />
-              </a>
-            </li>
-          ))}
-        </ul></> : <><p>Search queries reported by the AI provider for this answer.</p>{searches.length ? <ul className="answer-searches">{searches.map(query => <li key={query}><Search size={15} aria-hidden="true" /><span>{query}</span></li>)}</ul> : <p>No search queries were reported. This does not establish whether web search was used.</p>}</>}
+        <AnswerSources projectId={o.projectId} citations={sources} retrieved={o.retrievedSources} />
+        </> : <>{searches.length ? <ul className="answer-searches">{searches.map((query, index) => <li key={index}><Search size={15} aria-hidden="true" /><span>{query}</span></li>)}</ul> : <p>{o.webSearchConfirmed ? 'This answer used web search, but no queries were reported.' : 'No search queries were reported for this answer.'}</p>}</>}
         </div>
       </div></Dialog>}
     </article>

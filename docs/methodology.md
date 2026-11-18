@@ -18,21 +18,27 @@ Local matching uses brand names and aliases with Unicode word boundaries. A cita
 
 ## Where answers come from
 
-- **ChatGPT:** Responses API answers. Web search depends on the chosen model and account permissions.
-- **OpenRouter:** model-only API answers, without a search plugin.
-- **DataForSEO:** API answers with web search requested through its LLM Responses endpoint.
-- **DeepSeek:** API answers, in visibility checks and Asks. OpenGEO offers the model DeepSeek's search API as a tool and runs the searches it asks for, up to two per answer. A DeepSeek check keeps its own trend and comparison, and recommendations do not read it by default: they read the newest check from a connection that prepares them.
-- **Supported SurfacedBy checks:** consumer-interface answers, labelled with their collection surface.
+- **ChatGPT:** answers with web search requested, subject to your account permissions.
+- **OpenRouter:** answers without live web search.
+- **DataForSEO:** answers with web search requested.
+- **DeepSeek:** answers with web search available. Only links also returned by its search are counted as citations; other retrieved pages remain separate.
+- **SurfacedBy:** answers from the engines currently available for the requested check.
 
-API answers can differ from a logged-in consumer chat app. Each observation records its prompt, provider, platform, returned model identity, locale, collection time, answer, citations and retrieval mode.
+Results can differ from a conversation in a chat app. Each public answer keeps its question, engine, language, collection time and citations. Internal model identifiers and collection details stay out of result screens, public response metadata and project exports. Direct connections still let you choose your own answer settings.
 
-Citations come from provider annotations, not guessed links in answer text. DeepSeek is the exception: its API returns no citation annotations, so OpenGEO records the links written in its final answer. Those links are not matched against the search results, so one can come from the model rather than a search. A DeepSeek search counts as confirmed when at least one search returned results, and every query it ran is saved with the answer. Requesting search does not prove it ran: ChatGPT confirms search only when the final response contains a completed `web_search_call`. The interface marks other cases, including older records without that flag, as unconfirmed. The searches a completed call reports (its `action.query`) are saved with the answer as given, up to 20 per answer, and older records simply have none. See the [web search response contract](https://developers.openai.com/api/docs/guides/tools-web-search).
+Citations come from returned source evidence, not guessed links in answer text. Requesting search does not prove it ran. The AI searches tab shows only searches reported with the answer, up to 20 per answer. Older answers without that evidence show no reported searches; OpenGEO does not invent them.
 
-Supported SurfacedBy selected-question checks preserve the approved question IDs, locale, original answers, citations and collection dates, then use local presence matching. They do not automatically purchase analysis. Failed or cancelled checks can retain answers already collected; full checks keep their separate pricing and analysis workflow.
+SurfacedBy visibility scans include analysis and recommendations. Ask uses selected-question measurement: it preserves the approved question, language, original answer, citations and collection date, then uses local presence matching. It does not buy full analysis. Older saved visibility runs that used selected-question measurement keep that original workflow when resumed; they are never silently replaced with a full scan. Failed or cancelled checks can retain answers already collected.
 
 ## Compare checks fairly
 
-Use the same project identity, aliases, question list, locale, provider, platform, model and retrieval mode. OpenGEO stores a configuration digest for that scope, including confirmed-search status. Model aliases can change upstream, so the returned model identity is also retained.
+In a response, **Retrieved without a citation** lists additional pages the engine
+reported finding. Those pages earn no citation credit. For Perplexity checks with
+a numbered source list, OpenGEO matches references such as `[3]` to the original
+list before filtering duplicate links. When no reference matches a position, the
+answer keeps its reported source annotations and the split is unavailable.
+
+Use the same brand identity, aliases, question list, language, connection and answer settings. OpenGEO keeps a private comparison record for that scope, including available search evidence. A change of settings starts a separate comparison. Exported history keeps its comparison digest; imported answers without private settings are not assumed to match a new check.
 
 The history chart uses actual check timestamps. Incomplete checks create gaps; one check is a point rather than a trend. The underlying counts and timestamps remain available in an accessible table.
 
@@ -52,7 +58,7 @@ A target page is cited when an answer links to it. Each answer counts once per p
 
 ## Asks
 
-An ask sends one question, typed as a person would search it, to the engines you choose, and keeps each engine's answer with its surface, model, locale, date, searches and citations. It is scored with the same mention and citation rules as a check.
+An ask sends one question, typed as a person would search it, to the engines you choose. Each answer keeps its engine, language, date, reported searches and citations. It is scored with the same mention and citation rules as a check.
 
 **One-off answers stay separate from visibility measurements.** They do not enter Responses, Sources, rates, trends, findings or exports. An Ask uses the engines chosen for that question, rather than the consistent question list and settings needed to compare checks. The screen shows earlier answers to the same tracked question beside it so a single reading is not mistaken for a trend.
 

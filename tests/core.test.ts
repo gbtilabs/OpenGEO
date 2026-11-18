@@ -13,8 +13,48 @@ import {Runner} from '../server/workflows.js';
 import {Scheduler} from '../server/scheduler.js';
 import {jobInput,projectInput,ProviderError} from '../server/contracts.js';
 import {presence,summarize} from '../server/analysis.js';
-import {isPublicIp,publicUrl} from '../server/network.js';
+import {isPublicIp,publicUrl,isPublicEvidenceUrl} from '../server/network.js';
 import {parseDfs} from '../server/providers.js';
+
+test('public links retain HTTP meaning and reject local host aliases and tunneled private addresses', () => {
+  for (const link of ['javascript:443', 'example.com/guide', 'http://localhost./', 'http://name.localhost/',
+    'http://host.local./', 'https://[2002:7f00:1::]/', 'https://[2002:0a00:0001::]/',
+    'http://[::ffff:7f00:1]/', 'https://192.0.2.1/', 'https://203.0.113.10/', 'https://[2001:db8::1]/']) {
+    assert.equal(isPublicEvidenceUrl(link), false, link);
+  }
+  assert.equal(publicUrl('example.com/guide').href, 'https://example.com/guide');
+  for (const link of ['https://example.com/guide#part', 'https://[2606:4700:4700::1111]/', 'https://[2002:0808:0808::1]/']) {
+    assert.equal(isPublicEvidenceUrl(link), true, link);
+  }
+  for (const address of ['2002:7f00:1::1', '2002:a00::1', '::ffff:127.0.0.1', '::ffff:7f00:0001', '2001:0::1']) {
+    assert.equal(isPublicIp(address), false, address);
+  }
+});
+
+test('Perplexity citation numbers refer to the original pool before URL filtering or deduplication', () => {
+  const annotations = [
+    { url: 'javascript:bad' }, { url: 'https://brand.example/background', title: 'Background' },
+    { url: 'https://reference.example', title: 'Reference', private: 'internal' },
+    { url: 'https://reference.example/' }, { url: 'https://brand.example/background' },
+  ];
+  const response = (text: string) => ({ status_code: 20000, tasks: [{ status_code: 20000, result: [{
+    model_name: 'fixture', web_search: true, fan_out_queries: [' one ', 'one', null],
+    items: [null, { sections: [null, { type: 'text', text: { private: true } }, { type: 'text', text, annotations }] }],
+  }] }] });
+  const answer = parseDfs(response('A useful reference [3][3][90].'), 'perplexity');
+  assert.equal(answer.text, 'A useful reference [3][3][90].');
+  assert.deepEqual(answer.citations, [{ url: 'https://reference.example', title: 'Reference' }]);
+  assert.deepEqual(answer.retrievedSources, [{ url: 'https://brand.example/background', title: 'Background' }]);
+  assert.deepEqual(answer.searchQueries, ['one', 'one']);
+  assert.equal(answer.webSearchConfirmed, true);
+  assert.equal(presence({ brand: 'Brand Ltd', aliases: [], domain: 'brand.example' } as any,
+    answer.text, answer.citations.map(source => source.url)).cited, false);
+  for (const [platform, text] of [['perplexity', 'No indexed citation [90].'], ['claude', 'Reference [3].']]) {
+    const unknown = parseDfs(response(text), platform);
+    assert.equal(unknown.citations.length, 2);
+    assert.equal(unknown.retrievedSources, undefined);
+  }
+});
 import {exportProject} from '../server/export.js';
 import {lockRuntime} from '../server/runtime-lock.js';
 function fixture(){const dir=mkdtempSync(join(tmpdir(),'opengeo-test-'));const store=new Store(dir);return {dir,store,close(){store.close();rmSync(dir,{recursive:true,force:true})}}}

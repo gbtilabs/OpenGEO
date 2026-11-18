@@ -2,12 +2,11 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ProviderError, type Job, type Project } from "./contracts.js";
 import { contentSources } from "./evidence-context.js";
+import { isPublicEvidenceUrl } from "./network.js";
 import { consoleManaged, managedJob } from "./console-managed.js";
 import type { Runner } from "./workflows.js";
 
-const source = z.object({ url: z.string().url().refine(value => {
-  const url = new URL(value); return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password;
-}), title: z.string() });
+const source = z.object({ url: z.string().refine(isPublicEvidenceUrl), title: z.string() });
 const result = z.object({ job: managedJob, brief: z.string().nullable(),
   draft: z.object({ title: z.string().nullable(), markdown: z.string().nullable() }).nullable(),
   review: z.object({ requires_human_review: z.literal(true), claim_scope: z.literal("numeric_and_absolute_statements"),
@@ -19,7 +18,7 @@ export async function consoleContent(runner: Runner, job: Job, project: Project,
   const completed = runner.store.step(job.id, "content-result");
   if (completed?.state === "done") return JSON.parse(completed.body!);
   const { original, task } = runner.contentRequest(job, project);
-  const { output, input, capability } = await consoleManaged(runner, job, project, signal, () => {
+  const { output, input } = await consoleManaged(runner, job, project, signal, () => {
     const question = original?.topic ?? job.topic ?? project.brand;
     const required = task.mode === "page_update" && task.targetUrl ? [task.targetUrl] : [];
     let urls: string[];
@@ -61,7 +60,7 @@ export async function consoleContent(runner: Runner, job: Job, project: Project,
         evidenceIds: sources.filter(source => issue.evidence_urls.includes(source.url)).map(source => source.id) })) },
     reviewCurrent: true, requiresHumanReview: true,
     status: output.review.issues.length || !output.review.coverage_complete ? "needs_review" : "draft",
-    createdAt: new Date().toISOString(), model: capability?.models.find(model => model.operations.includes("content"))?.id ?? "managed",
+    createdAt: new Date().toISOString(), model: "managed",
     ...(original ? { derivedFrom: original.id, revisionInstructions: job.revisionInstructions } : {}) };
   runner.store.db.transaction(() => {
     runner.store.put("content", project.id, job.id, doc);

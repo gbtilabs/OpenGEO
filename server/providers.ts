@@ -7,8 +7,8 @@ import {
   type Citation,
   type CredentialInput,
 } from "./contracts.js";
-import { providerJson } from "./network.js";
-import { deepseekComplete, deepseekJson, deepseekModels } from "./deepseek.js";
+import { providerJson, isPublicEvidenceUrl } from "./network.js";
+import { deepseekComplete, deepseekJson, deepseekModels } from './deepseek.js';
 import { Agent } from 'undici';
 const chatGPTTimeoutMs = 15 * 60 * 1000;
 const chatGPTAgent = new Agent({ headersTimeout: chatGPTTimeoutMs, bodyTimeout: chatGPTTimeoutMs });
@@ -28,6 +28,7 @@ export type Completion = {
   text: string;
   costUsd: number | null;
   citations: Citation[];
+  retrievedSources?: Citation[];
   model: string;
   webSearchConfirmed?: boolean;
   searchQueries?: string[];
@@ -37,9 +38,9 @@ export type Completion = {
 function reportedCost(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
-export function parseDfs(body: any): Completion {
-  const task = body.tasks?.[0];
-  if (body.status_code !== 20000 || task?.status_code !== 20000)
+export function parseDfs(body: any, platform?: string): Completion {
+  const task = body?.tasks?.[0];
+  if (body?.status_code !== 20000 || task?.status_code !== 20000)
     throw new ProviderError(
       "provider",
       "The measurement provider did not complete the task.",
@@ -52,12 +53,16 @@ export function parseDfs(body: any): Completion {
       "Measurement returned no answer.",
       true,
     );
-  const sections = (result.items ?? []).flatMap((x: any) => x.sections ?? []);
+  const sections: any[] = Array.isArray(result.items) ? result.items
+    .flatMap((item: any) => Array.isArray(item?.sections) ? item.sections : [])
+    .filter((section: any) => section && typeof section === 'object') : [];
   const text = sections
-    .filter((s: any) => s.type === "text")
-    .map((s: any) => s.text ?? "")
+    .filter((s: any) => s.type === "text" && typeof s.text === "string")
+    .map((s: any) => s.text)
     .join("\n");
-  const citations = safeCitations(sections.flatMap((s: any) => s.annotations ?? []));
+  const annotations: unknown[] = sections.flatMap((s: any) => Array.isArray(s.annotations) ? s.annotations : [])
+    .filter((value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value));
+  const evidence = dfsSourceEvidence(platform, text, annotations);
   if (!text.trim())
     throw new ProviderError(
       "invalid_response",
@@ -67,7 +72,11 @@ export function parseDfs(body: any): Completion {
   return {
     text,
     costUsd: reportedCost(task.cost),
-    citations,
+    ...evidence,
+    ...(typeof result.web_search === 'boolean' ? { webSearchConfirmed: result.web_search } : {}),
+    ...(Array.isArray(result.fan_out_queries) ? { searchQueries: result.fan_out_queries
+      .filter((query: unknown): query is string => typeof query === 'string' && !!query.trim())
+      .map((query: string) => query.trim()) } : {}),
     model: result.model_name,
   };
 }
@@ -249,7 +258,7 @@ export class Providers {
     }
     if (provider === "deepseek") {
       const answer = await deepseekComplete(this.deepseekKey(), model, instructions, input, signal, maxTokens, webSearch);
-      return { text: answer.text, costUsd: answer.costUsd, costEstimated: true, citations: safeCitations(answer.links), model: answer.model,
+      return { text: answer.text, costUsd: answer.costUsd, costEstimated: true, citations: safeCitations(answer.links), retrievedSources: safeCitations(answer.retrievedSources), model: answer.model,
         webSearchConfirmed: answer.webSearchConfirmed, searchQueries: answer.searchQueries };
     }
     if (provider !== "chatgpt")
@@ -384,7 +393,7 @@ export class Providers {
         ]),
       },
     );
-    return parseDfs(b);
+    return parseDfs(b, platform);
   }
   async console(
     path: string,
@@ -420,6 +429,28 @@ export function reportedSearches(output: unknown): string[] {
   }
   return queries;
 }
+/** Perplexity numbers its original retrieval pool. Filtering unsafe or repeated URLs
+ * before resolving those numbers would attribute the answer to a different page. */
+function dfsSourceEvidence(platform: string | undefined, text: string, annotations: unknown[]) {
+  if (platform !== 'perplexity') return { citations: safeCitations(annotations) };
+  const referenced = new Set<number>();
+  for (const match of text.matchAll(/\[(\d+)\]/g)) {
+    const index = Number(match[1]) - 1;
+    if (index >= 0 && index < annotations.length) referenced.add(index);
+  }
+  // Match the dashboard's historical annotation fallback when the split is unknown.
+  if (!referenced.size) return { citations: safeCitations(annotations) };
+  const citations = safeCitations(annotations.filter((_, index) => referenced.has(index)));
+  const retrievedSources = otherSearchLinks(annotations.filter((_, index) => !referenced.has(index)), citations);
+  return { citations, retrievedSources };
+}
+
+/** Only publicly linkable pages distinct from citations belong in the optional search evidence. */
+export function otherSearchLinks(raw: unknown, citations: Citation[]): Citation[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const citedUrls = new Set(citations.map(source => new URL(source.url).href));
+  return safeCitations(raw).filter(source => !citedUrls.has(new URL(source.url).href));
+}
 /** Citation metadata is projected explicitly, without supplier tracking fields or invented links. */
 export function safeCitations(annotations: unknown): Citation[] {
   const seen = new Set<string>(), citations: Citation[] = [];
@@ -428,12 +459,11 @@ export function safeCitations(annotations: unknown): Citation[] {
     if (!annotation || typeof annotation !== "object" || Array.isArray(annotation)) continue;
     const citation = annotation.url_citation ?? annotation;
     if (!citation || typeof citation !== "object" || Array.isArray(citation)) continue;
-    if (typeof citation.url !== "string") continue;
-    try {
-      const url = new URL(citation.url);
-      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || seen.has(url.href)) continue;
-      seen.add(url.href); citations.push({ url: citation.url, ...(typeof citation.title === "string" ? { title: citation.title } : {}) });
-    } catch { /* Malformed supplier annotations are not usable citation evidence. */ }
+    if (typeof citation.url !== "string" || !isPublicEvidenceUrl(citation.url)) continue;
+    const href = new URL(citation.url).href;
+    if (seen.has(href)) continue;
+    seen.add(href);
+    citations.push({ url: citation.url, ...(typeof citation.title === "string" ? { title: citation.title } : {}) });
   }
   return citations;
 }

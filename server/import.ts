@@ -2,24 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Store } from "./storage.js";
 import { projectInput, providers, jobKinds, contentTask, opportunityDetails } from "./contracts.js";
-import { publicUrl } from "./network.js";
+import { publicUrl, isPublicEvidenceUrl } from "./network.js";
 import { portableJobResult } from "./portable-results.js";
 import { summarize } from "./analysis.js";
 import { normalizeTopics } from "./topics.js";
 import { topicNames } from "./topic-migration.js";
 const date = z.string().datetime({ offset: true });
 const id = z.string().min(1).max(200);
-const safeUrl = z
-  .string()
-  .url()
-  .refine((value) => {
-    try {
-      publicUrl(value);
-      return true;
-    } catch {
-      return false;
-    }
-  }, "Use a public HTTP URL without credentials");
+const safeUrl = z.string().refine(isPublicEvidenceUrl, "Use a public HTTP URL without credentials");
 const citation = z
   .object({ url: safeUrl, title: z.string().optional() })
   .strict();
@@ -27,7 +17,7 @@ const page = z
   .object({
     id,
     jobId: id.optional(),
-    url: z.string().url(),
+    url: safeUrl,
     fetchedAt: date,
     status: z.number().int(),
     title: z.string(),
@@ -49,15 +39,16 @@ const observation = z
     prompt: z.string(),
     provider: z.enum(providers),
     platform: z.string(),
-    model: z.string(),
+    model: z.string().default('not-disclosed'),
     locale: z.string(),
     observedAt: date,
     answer: z.string(),
     citations: z.array(citation),
-    surface: z.enum(["api", "consumer_interface", "unknown"]),
+    retrievedSources: z.array(citation).optional(),
+    surface: z.enum(["api", "consumer_interface", "unknown"]).default('unknown'),
     retrieval: z.enum(["web_search", "model_only", "provider_managed"]).optional(),
     webSearchConfirmed: z.boolean().optional(),
-    searchQueries: z.array(z.string().min(1).max(300)).max(20).optional(),
+    searchQueries: z.array(z.string().min(1)).optional(),
     mentioned: z.boolean(),
     cited: z.boolean(),
     costUsd: z.number().nullable(),
@@ -120,7 +111,7 @@ const content = z
     revisionInstructions: z.string().max(2000).optional(),
     requiresHumanReview: z.literal(true),
     createdAt: date,
-    model: z.string(),
+    model: z.string().default('not-disclosed'),
     editedAt: date.optional(),
   })
   .strict();

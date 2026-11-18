@@ -10,7 +10,7 @@ export type PricedModel = { name: string; contextLength: number; maxOutputTokens
  * Read from https://api-docs.deepseek.com/quick_start/pricing on the date below; update both together.
  */
 export const deepseekPrices: { checked: string; source: string; searchUsd: number; models: Record<string, PricedModel> } = {
-  checked: "2026-11-09",
+  checked: "2026-11-13",
   source: "https://api-docs.deepseek.com/quick_start/pricing",
   searchUsd: 0.75 / 1000,
   models: {
@@ -44,8 +44,8 @@ export function deepseekModels(listed: string[]): Model[] {
 }
 
 /**
- * The most one answer can cost: every chat call at the peak cache-miss rate, carrying the question, all search
- * results so far and all earlier output, each producing the full output allowance, plus every search fee.
+ * Reserve an answer allowance at peak cache-miss rates. The request loop checks actual serialized
+ * context against this allowance before every purchase, including parallel searches and multibyte text.
  */
 export function deepseekAnswerEstimate(model: Pick<Model, "inputUsd" | "outputUsd">, tokenUpper: number, cap: number) {
   let total = 0, context = tokenUpper;
@@ -57,9 +57,8 @@ export function deepseekAnswerEstimate(model: Pick<Model, "inputUsd" | "outputUs
 }
 
 /**
- * A run budget that lets a check of `questions` answers finish: a typical answer allowed at 15% of the worst
- * case (answers so far have cost about 7%), plus one full worst case, because each answer starts only if its
- * worst case still fits. Rounded up to the next $0.25. 82 questions on Flash suggest $0.50.
+ * Suggest a starting budget, not guaranteed completion: 15% of each answer allowance plus
+ * one full allowance, rounded up to the next $0.25. The check pauses before exceeding it.
  */
 export function deepseekCheckBudget(questions: number, model: Pick<Model, "inputUsd" | "outputUsd">, tokenUpper = 1700, cap = 4096) {
   const worst = deepseekAnswerEstimate(model, tokenUpper, cap);

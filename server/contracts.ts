@@ -79,6 +79,7 @@ export type Observation = {
   observedAt: string;
   answer: string;
   citations: Citation[];
+  retrievedSources?: Citation[];
   surface: "api" | "consumer_interface" | "unknown";
   retrieval?: "web_search" | "model_only" | "provider_managed";
   webSearchConfirmed?: boolean;
@@ -235,6 +236,7 @@ export class ProviderError extends Error {
     message: string,
     public uncertain = false,
     public remoteCode?: string,
+    public httpStatus?: number,
   ) {
     super(message);
     this.name = "ProviderError";

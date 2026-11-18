@@ -29,6 +29,10 @@ export function pointChange(points: number | null) {
   return { direction: rounded > 0 ? "up" as const : "down" as const, label: (rounded > 0 ? "+" : "") + rounded.toFixed(1) + " points" };
 }
 
-export const usd = (value: number, digits = 2) => "$" + value.toFixed(digits);
-/** Recorded spend: a metered answer often costs a fraction of a cent, which two decimals would show as $0.00. */
-export const usdSpent = (value: number) => usd(value, value > 0 && value < 0.01 ? 4 : 2);
+const dollarAmount = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
+/** Preserve the billing precision in prices and limits; a positive charge must not look free. */
+export const usd = (value: number, digits?: number) => {
+  if (digits !== undefined) return '$' + value.toFixed(digits);
+  if (value !== 0 && Math.abs(value) < 0.000001) return value > 0 ? '<$0.000001' : '>-$0.000001';
+  return '$' + dollarAmount.format(value);
+};

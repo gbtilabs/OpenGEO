@@ -27,7 +27,7 @@ export const answerReply = (content: string, finish = 'stop') => ({ id: 'chat-' 
 export const answer = 'Example Brand publishes free reports. See [Example reports](https://example.com/reports) and https://example.org/compare.';
 
 export type Request = { host: string; path: string; method: string; auth?: string; body: any };
-export type Script = { replies: any[]; requests: Request[]; balanceStatus?: number; chatStatus?: number; dropChat?: boolean };
+export type Script = { replies: any[]; requests: Request[]; balanceStatus?: number; chatStatus?: number; dropChat?: boolean; searchStatus?: number; dropSearch?: boolean; searchResults?: unknown };
 export function fakeDeepSeek(script: Script) {
   return (async (url: string | URL, init?: RequestInit) => {
     const address = new URL(String(url)), method = init?.method ?? 'GET', body = init?.body ? JSON.parse(String(init.body)) : null;
@@ -37,6 +37,9 @@ export function fakeDeepSeek(script: Script) {
     if (address.pathname === '/user/balance') return script.balanceStatus === 401 ? json({ error: { message: 'Authentication Fails', type: 'authentication_error' } }, 401)
       : json({ is_available: true, balance_infos: [{ currency: 'USD', total_balance: '9.87', granted_balance: '0.00', topped_up_balance: '9.87' }] });
     if (address.pathname === '/models') return json({ object: 'list', data: ['deepseek-v4-pro', 'deepseek-future', 'deepseek-flash'].map(id => ({ id, object: 'model', owned_by: 'deepseek' })) });
+    if (address.pathname === '/v1/tools/search' && script.dropSearch) throw new TypeError('search response lost');
+    if (address.pathname === '/v1/tools/search' && script.searchStatus) return json({ error: { message: 'Search refused' } }, script.searchStatus);
+    if (address.pathname === '/v1/tools/search' && script.searchResults !== undefined) return json({ results: script.searchResults });
     if (address.pathname === '/v1/tools/search') return json({ results: body.query.includes('nothing') ? [] : [
       { rerank_score: 2.5, title: 'Free example reports', url: 'https://example.com/reports', snippet: 'Example Brand shares free reports.', summary: 'Longer summary.', content: '', site_name: 'Example', site_icon: null, date: '2026-10-01T00:00:00Z', authority: 3 },
       { rerank_score: 1.9, title: 'Comparing example tools', url: 'https://example.org/compare', snippet: 'A comparison.', summary: '', content: '', site_name: null, site_icon: null, date: null, authority: -1 }] });
