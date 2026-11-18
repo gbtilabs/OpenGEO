@@ -96,6 +96,24 @@ try {
     await check(page, "overview-deepseek", width);
   }
 
+  // Grok has only a topic check: brand pages show its first-check state, and its topic answers are one step away.
+  await page.setViewportSize({ width: 1360, height: 900 });
+  await navigate(page, "Overview");
+  await pick(page, 1360, /^Grok through SurfacedBy/);
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: width === 390 ? 780 : 900 });
+    await navigate(page, "Overview");
+    await page.getByText("Grok through SurfacedBy is waiting for a check of all 12 questions", { exact: true }).waitFor();
+    await check(page, "overview-first-check", width);
+  }
+  await page.setViewportSize({ width: 1360, height: 900 });
+  const grokTopic = page.waitForResponse(response => response.url().includes("/topics/" + topicId + "?engine=console%3Agrok"));
+  await page.getByRole("button", { name: "Open Reports", exact: true }).click();
+  assert.equal((await grokTopic).status(), 200);
+  await page.getByText("Showing 3 of 12 questions", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Topic", exact: true }).click();
+  await page.getByRole("option", { name: /^All questions/ }).click();
+
   // ChatGPT picked on Visibility: its own trend, and the check history names each engine.
   await page.setViewportSize({ width: 1360, height: 900 });
   await navigate(page, "Visibility");

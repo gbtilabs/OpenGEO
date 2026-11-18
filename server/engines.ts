@@ -56,7 +56,7 @@ export function engineSummaries(store: Store, project: Project, jobs: Job[]) {
       provider: checks[0].provider ?? "chatgpt",
       platform: key.slice(key.indexOf(":") + 1),
       latest: brand ? checkSummary(store, project, brand) : null,
-      topicCheck: topic ? { ...checkSummary(store, project, topic), topic: names.get(topic.topicId!) ?? "Removed topic" } : null,
+      topicCheck: topic ? { ...checkSummary(store, project, topic), topicId: topic.topicId!, topic: names.get(topic.topicId!) ?? "Removed topic" } : null,
       preparesRecommendations: !!brand && analysisBasisCheck(brand),
       nextRunAt: next,
     };

@@ -71,7 +71,7 @@ test('the workspace lists each engine on its own, newest first, and never adds e
     assert.deepEqual(chatgpt.latest.topCited.map((row: any) => row.domain), ['example.com', 'example.org']);
     assert.deepEqual([deepseek.latest.jobId, deepseek.latest.mentioned, deepseek.preparesRecommendations, deepseek.topicCheck], [f.deepseek.id, 0, false, null]);
     assert.equal(grok.latest, null, 'an engine with only topic checks has no brand reading');
-    assert.deepEqual([grok.topicCheck.jobId, grok.topicCheck.topic, grok.topicCheck.mentioned], [f.grok.id, 'Reports', 1]);
+    assert.deepEqual([grok.topicCheck.jobId, grok.topicCheck.topicId, grok.topicCheck.topic, grok.topicCheck.mentioned], [f.grok.id, f.topicId, 'Reports', 1]);
     assert.match(reportMarkdown(f.store, f.project.id), /Engine: DeepSeek\n\nChecked: 2026-11-20/, 'the report names the engine and date it uses');
   } finally { await f.close(); }
 });
@@ -91,6 +91,8 @@ test("an engine view holds only that engine's answers, trend and comparison", as
     assert.equal(deepseek.body.measurement.id, f.deepseek.id);
     assert.deepEqual(deepseek.body.presentation.history.map((point: any) => point.jobId), [f.deepseek.id]);
     assert.notEqual(deepseek.body.comparison.status, 'comparable', 'a single DeepSeek check has nothing of its own to compare with');
+    const topicOnly = await f.read(`/api/projects/${f.project.id}/engines/console:grok`);
+    assert.deepEqual([topicOnly.body.measurement, topicOnly.body.observations], [null, []], 'an engine with only topic checks has no brand reading to show');
     const unchecked = await f.read(`/api/projects/${f.project.id}/engines/dataforseo:gemini`);
     assert.deepEqual([unchecked.status, unchecked.body.measurement, unchecked.body.observations], [200, null, []]);
     assert.ok((await f.read(`/api/projects/${f.project.id}/engines/Not-An-Engine`)).status >= 400);

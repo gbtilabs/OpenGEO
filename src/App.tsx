@@ -72,7 +72,7 @@ import { completedBrandMeasurement, completedMeasurement, completedAnalysisResul
 import { TopicLens, Topics, TopicVisibility, useTopicView } from "./Topics";
 import { useEngineScope } from "./engine-scope";
 import { EngineLens } from "./EngineLens";
-import { AllEngines, AllEnginesStrip, EngineWaiting } from "./AllEngines";
+import { AllEngines, AllEnginesStrip, EngineFirstCheck, EngineWaiting } from "./AllEngines";
 import { engineName } from "../server/engine-key";
 import type { PublicObservation as Observation } from '../server/public-results';
 import { TopicDialog } from "./TopicDialog";
@@ -202,7 +202,7 @@ export function App() {
   }, [selected, sessionReady]);
   useEffect(() => { document.title = identity.name; }, []);
   useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [page, selected]);
-  const engine = useEngineScope(workspace, page), hold = engine.all || engine.loading;
+  const engine = useEngineScope(workspace, page);
   const w = engine.workspace,
     p = w?.project;
   const connectedProviders = providerOrder.filter((provider) => connected[provider]);
@@ -218,6 +218,8 @@ export function App() {
   useEffect(() => { setScope(null); setTopicPage(null); setAskId(null); }, [selected]);
   const lensPage = ["Visibility", "Responses", "Sources", "Competitors"].includes(page);
   const scoped = p?.topics.some((topic) => topic.id === scope) ? scope : null;
+  // A topic lens over an engine with only topic checks still reads that engine's answers to the topic.
+  const firstCheck = engine.empty && !(lensPage && scoped), hold = engine.all || engine.loading || firstCheck;
   const viewId = page === "Topics" ? topicPage : lensPage ? scoped : null;
   const viewTopic = p?.topics.find((topic) => topic.id === viewId);
   const { view: topicView, error: topicError } = useTopicView(p?.id, viewTopic ? viewId : null, w?.revision ?? '', engine.picked);
@@ -402,11 +404,11 @@ export function App() {
             </div>
           ) : (
             <>
-              {engine.all && page !== "Overview" ? <AllEnginesStrip scope={engine} page={page} /> : engine.loading ? <EngineWaiting /> : lensLoading ? <div className="workspace-loading" role="status">{topicError ? <p role="alert">{topicError}</p> : <><span className="visually-hidden">Loading this topic</span><div className="panel skeleton tall" aria-hidden="true" /></>}</div>
+              {engine.all && page !== "Overview" ? <AllEnginesStrip scope={engine} page={page} /> : engine.loading ? <EngineWaiting /> : firstCheck && engine.summary ? <EngineFirstCheck engine={engine.summary} questions={p!.prompts.length} openTopic={(id) => { chooseScope(id); changePage("Visibility"); }} onCheck={() => setJobDialog("measure")} /> : lensLoading ? <div className="workspace-loading" role="status">{topicError ? <p role="alert">{topicError}</p> : <><span className="visually-hidden">Loading this topic</span><div className="panel skeleton tall" aria-hidden="true" /></>}</div>
               : lens?.measurement && ["Visibility", "Responses", "Sources"].includes(page) ? <MeasurementScope measurement={lens.measurement} observations={lens.observations} missing={lens.metrics.missing} />
               : !lens && !engine.all && w.measurement && ["Overview", "Visibility", "Responses", "Sources"].includes(page) && <MeasurementScope measurement={w.measurement} observations={w.observations} missing={w.metrics.missing} />}
               {page === "Ask history" && <AskPage projectId={p!.id} version={w.revision} askId={askId} setAskId={setAskId} ask={ask} refresh={refresh} />}
-              {page === "Overview" && !engine.loading && (engine.all ? <AllEngines scope={engine} jobs={w.jobs} topics={Object.fromEntries(p!.topics.map((topic) => [topic.id, topic.name]))} consoleConnected={!!connected.console} onCheck={() => setJobDialog("measure")} /> : (
+              {page === "Overview" && !engine.loading && !firstCheck && (engine.all ? <AllEngines scope={engine} jobs={w.jobs} topics={Object.fromEntries(p!.topics.map((topic) => [topic.id, topic.name]))} consoleConnected={!!connected.console} onCheck={() => setJobDialog("measure")} /> : (
                 <>
                   <OverviewSummary brand={p!.brand} presentation={w.presentation} collected={w.metrics.completed} missing={w.metrics.missing} active={activeScan} onAnswers={() => changePage('Responses')} onCheck={measurementAction.action} />
                   {measured ? <div className="metrics">

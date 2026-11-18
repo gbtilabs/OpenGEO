@@ -42,6 +42,10 @@ export function useEngineScope(workspace: Workspace | null, page: string) {
     all: several && choice === "all" && lensPage,
     /** An engine was picked and its view has not arrived yet; pages wait rather than show another engine. */
     loading: !!picked && !view && lensPage,
+    /** The picked engine has answered topics but not yet every question, so brand pages show its first-check state. */
+    empty: !!picked && !!view && !view.measurement && lensPage,
+    /** The picked engine's summary, for the first-check state. */
+    summary: engines.find((engine) => engine.key === picked) ?? null,
     /** The lens shows only where it applies and only when there is more than one engine to choose from. */
     lens: several && lensPage,
     matches: (job: Pick<Job, "provider" | "platform">) => !picked || engineKey(job) === picked,

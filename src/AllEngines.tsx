@@ -98,3 +98,21 @@ export function AllEnginesStrip({ scope, page }: { scope: EngineScope; page: str
 export function EngineWaiting() {
   return <div className="workspace-loading" role="status"><span className="visually-hidden">Loading this engine's checks</span><div className="panel skeleton tall" aria-hidden="true" /></div>;
 }
+
+/** A picked engine that has answered a topic but not yet every question: its topic answers are one step away. */
+export function EngineFirstCheck({ engine, questions, openTopic, onCheck }: {
+  engine: EngineSummary; questions: number; openTopic: (topicId: string) => void; onCheck: () => void;
+}) {
+  const name = engineName(engine), topic = engine.topicCheck;
+  return <section className="panel engine-first-check">
+    <ProviderIcon provider={icon(engine)} size={32} />
+    <h2>{name} is waiting for a check of all {questions} questions</h2>
+    <p>{engine.nextRunAt ? "Its first full check runs " + dateTime(engine.nextRunAt) + "." : "Check all your questions to see its brand rates."}
+      {topic && " Until then, its latest topic check is " + topic.topic + ": mentioned in " + topic.mentioned + " of " + topic.completed + " answers, cited in " + topic.cited + " of " + topic.completed + "."}</p>
+    <div className="button-row">
+      {topic && <button className="primary" onClick={() => openTopic(topic.topicId)}>Open {topic.topic}</button>}
+      <button className="secondary" onClick={onCheck}>Check all questions now</button>
+    </div>
+    <p className="small">Pages keep their layout and wait for the full check. Other engines' figures never stand in.</p>
+  </section>;
+}
