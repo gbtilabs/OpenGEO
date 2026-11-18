@@ -56,6 +56,14 @@ A check limited to a topic asks only that topic's questions, so providers collec
 
 A target page is cited when an answer links to it. Each answer counts once per page. Fragments, a trailing slash, a leading `www.` and `utm_` tracking parameters (ChatGPT adds `utm_source=openai` to the links it cites) are ignored; any other difference in path or query is a different page.
 
+## Engines
+
+An engine is where answers come from: the connection and the answer surface. ChatGPT through its API and the ChatGPT app through SurfacedBy are two engines, as are DeepSeek through its API and DeepSeek through SurfacedBy. When more than one engine has checked a website, an engine selector beside the topic selector chooses whose answers the brand view reads, and each website remembers the last choice.
+
+**All engines** shows each engine's latest check side by side: its date, answers collected, mention and citation rates, and most cited sources. Rates from different engines are never added together or averaged. Visibility, Responses, Sources and Competitors read one engine at a time, so with All engines they ask you to pick one. An engine that has only checked a topic shows that topic check and waits for a check of every question before it shows brand rates; another engine's figures never stand in.
+
+Picking an engine scopes the displayed check, its trend, its recheck comparison and its competitors to that engine, and a topic view to that engine's checks of the topic. Recommendations keep reading the newest check from a connection that prepares them, whichever engine you pick, and Opportunities names that engine. Reports use the newest check from any engine and name it.
+
 ## Asks
 
 An ask sends one question, typed as a person would search it, to the engines you choose. Each answer keeps its engine, language, date, reported searches and citations. It is scored with the same mention and citation rules as a check.

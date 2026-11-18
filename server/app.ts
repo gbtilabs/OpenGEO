@@ -25,16 +25,12 @@ import {
 } from "./contracts.js";
 import { publicUrl } from "./network.js";
 import { topicScope, topicSummaries, topicView, normalizeTopics, withTopicChecks } from "./topics.js";
-import { workspacePresentation, currentFindings } from "./presentation.js";
+import { brandEvidence } from "./brand-evidence.js";
+import { engineChoice, engineParam, engineSummaries, engineView, saveEngineChoice, savedEngineChoice } from "./engines.js";
+import { currentFindings } from "./presentation.js";
 import { auditFindings, auditFindingPresentation } from './audit.js';
 import { SiteIcons } from "./site-icons.js";
-import { displayedMeasurement } from "./portable-results.js";
 import { UsageSharing } from "./usage.js";
-import {
-  measurementMetrics,
-  recheckComparison,
-  competitorEvidence,
-} from "./analysis.js";
 import { exportProject, reportMarkdown } from "./export.js";
 import { publicObservation, publicJob, publicArtifact } from './public-results.js';
 import { askActivity, registerAsks } from "./asks.js";
@@ -341,15 +337,10 @@ export async function createApp(
       brandJobs = jobs.filter((job) => !job.topicId);
     const audit = jobs.find(
         (j) => j.kind === "audit" && (j.status === "completed" || ['queued', 'running', 'paused'].includes(j.status) && store.pageCount(id, j.id) > 0),
-      ),
-      measure = displayedMeasurement(brandJobs, (job) => store.answerCount(id, job.id));
-    const observations = measure ? store.observations(id, measure.id) : [];
-    const snapshot = measure ? store.step(measure.id, "project") : undefined;
-    const prompts = snapshot?.body
-      ? JSON.parse(snapshot.body).prompts
-      : project.prompts;
+      );
     const coverage = auditCoverage.safeParse((audit?.result as any)?.coverage);
     const pages = audit && pageMode === 'full' ? store.pageSummaries(id, audit.id) : [];
+    const { measure, observations, metrics, presentation, comparison, competitors } = brandEvidence(store, project, brandJobs, pages);
     const pageFindings = new Map<string, Finding[] | null>();
     const auditJobs = new Set(jobs.filter(job => job.kind === 'audit').map(job => job.id));
     const findings = currentFindings(pageMode === 'lazy' ? store.nonAuditFindings(id) : store.findings(id), jobs, audit?.id).map(finding => {
@@ -365,9 +356,6 @@ export async function createApp(
       const copy = current?.find(item => item.kind === finding.kind);
       return copy ? { ...finding, title: copy.title, description: copy.description, steps: copy.steps } : finding;
     });
-    const metrics = measurementMetrics(measure, observations, measure ? prompts.length : 0);
-    const presentation = workspacePresentation(brandJobs, measure, observations,
-      snapshot?.body ? prompts : measure ? null : project.prompts, metrics.requested, pages);
     if (pageMode === 'lazy' && audit) presentation.audit = store.pageCatalog.summary(id, audit.id);
     const auditCounts = pageMode === 'lazy' ? store.pageCatalog.findingCounts(id, audit?.id) : { total: 0, done: 0 };
     return {
@@ -386,9 +374,11 @@ export async function createApp(
       metrics,
       presentation: { ...presentation, history: withTopicChecks(presentation.history, jobs, project) },
       measurement: measure ? publicJob(measure) : null,
-      comparison: recheckComparison(brandJobs),
-      competitors: competitorEvidence(project, observations),
+      comparison,
+      competitors,
       topics: topicSummaries(store, project, jobs),
+      engines: engineSummaries(store, project, jobs),
+      engineChoice: savedEngineChoice(store, id),
     };
   });
   app.get('/api/projects/:id/checks/:check/pages', (req, res) => {
@@ -430,11 +420,21 @@ export async function createApp(
     });
     return { page, findings };
   });
+  app.get("/api/projects/:id/engines/:engine", (req) => {
+    const { id, engine } = z.object({ id: z.string().uuid(), engine: engineParam }).parse(req.params);
+    return engineView(store, store.project(id), engine);
+  });
+  app.put("/api/projects/:id/engine-choice", (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const { engine } = z.object({ engine: engineChoice }).strict().parse(req.body);
+    return { engine: saveEngineChoice(store, id, engine) };
+  });
   app.get("/api/projects/:id/topics/:topic", (req) => {
     const { id, topic } = req.params as { id: string; topic: string };
+    const { engine } = z.object({ engine: engineParam.optional() }).strict().parse(req.query);
     const project = store.project(id), found = project.topics.find((item) => item.id === topic);
     if (!found) throw new Error("Topic not found");
-    const view = topicView(store, project, found);
+    const view = topicView(store, project, found, engine);
     return { ...view, observations: view.observations.map(publicObservation), measurement: view.measurement ? publicJob(view.measurement) : null };
   });
   app.get("/api/projects/:id/site-icon", async (req, res) => {

@@ -61,6 +61,9 @@ try {
   await page.goto("http://127.0.0.1:" + (runtime.app.server.address() as any).port);
   await page.locator(".topbar").waitFor();
 
+  // Two engines open on All engines; the DeepSeek view is one pick away, and the pick is kept across widths.
+  await page.getByRole("button", { name: "Engine", exact: true }).click();
+  await page.getByRole("option", { name: /^DeepSeek/ }).click();
   // The brand view after a DeepSeek check: its rates, labelled DeepSeek once.
   for (const width of [1360, 760, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 780 : 900 });

@@ -1,0 +1,46 @@
+/* Engine lens: placed and sized like the topic lens, so the two read as filters on the same evidence. */
+.engine-lens { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); }
+.topic-lens + .engine-lens { margin-left: 0; }
+.engine-lens > .choice { min-width: 0; max-width: 240px; }
+.engine-lens.scoped .choice-trigger { border-color: var(--primary-200); background: var(--primary-50); color: var(--primary-text); }
+.engine-lens .text-button { white-space: nowrap; }
+.engine-lens.in-page { display: none; }
+/* With both lenses in the top bar, each list already offers "All", so the shortcuts give their room to the controls. */
+.topbar .topic-lens:has(+ .engine-lens) .text-button, .topbar .topic-lens + .engine-lens .text-button { display: none; }
+
+.engine-scope { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); color: var(--muted); }
+.engine-scope .badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.engine-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
+.engine-card { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--panel-space); }
+.engine-card-ready { border-style: dashed; border-color: var(--border-strong); }
+.engine-card-ready p { margin: 0; color: var(--muted); }
+.engine-card-heading { display: flex; align-items: center; gap: var(--space-3); }
+.engine-card-heading h2 { margin: 0; font-size: 15px; }
+.engine-card-heading span { font-size: var(--text-caption); color: var(--muted); }
+.engine-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.engine-basis { background: var(--violet-50); color: var(--violet); }
+.engine-rates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.engine-rates > div { display: flex; flex-direction: column; gap: 2px; }
+.engine-rates span, .engine-rates small, .engine-list > span, .engine-list small { font-size: var(--text-caption); color: var(--muted); }
+.engine-rates strong { font-size: 28px; line-height: 1.2; }
+.engine-rates strong.mention { color: var(--mention); }
+.engine-rates strong.citation { color: var(--citation); }
+.engine-pending { display: flex; flex-direction: column; gap: 4px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-2); }
+.engine-pending strong { color: var(--ink); }
+.engine-pending span { color: var(--muted); }
+.engine-list { display: flex; flex-direction: column; gap: 6px; padding-top: var(--space-3); border-top: 1px solid var(--divider); }
+.engine-list > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.engine-card-footer { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); font-size: var(--text-caption); color: var(--muted); }
+.check-engine { margin-left: 6px; color: var(--muted); }
+
+@media (max-width: 1100px) {
+  .engine-lens > .choice { max-width: 200px; }
+  .engine-lens .text-button { display: none; }
+}
+@media (max-width: 900px) {
+  .topbar .engine-lens { display: none; }
+  .engine-lens.in-page { display: flex; margin: -12px 0 var(--space-4); }
+  .engine-lens.in-page > .choice { flex: 1; max-width: 360px; }
+  .engine-lens.in-page .text-button { display: inline-flex; }
+  .topic-lens.in-page + .engine-lens.in-page { margin-top: 0; }
+}

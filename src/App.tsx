@@ -69,56 +69,24 @@ import { OverviewSummary } from './OverviewSummary';
 import { ActivityNotice } from './ui/ActivityNotice';
 import { Dialog as Modal } from './ui/Dialog';
 import { completedBrandMeasurement, completedMeasurement, completedAnalysisResult, analysisInProgress, analysisMeasurementId, analysisBasisCheck, completedAnalysisBasis } from "../server/portable-results";
-import type { TopicSummary } from "../server/topics";
 import { TopicLens, Topics, TopicVisibility, useTopicView } from "./Topics";
+import { useEngineScope } from "./engine-scope";
+import { EngineLens } from "./EngineLens";
+import { AllEngines, AllEnginesStrip, EngineWaiting } from "./AllEngines";
+import { engineName } from "../server/engine-key";
 import type { PublicObservation as Observation } from '../server/public-results';
 import { TopicDialog } from "./TopicDialog";
-import type { Presentation } from "../server/presentation";
+import type { Workspace } from "./workspace";
 import identity from "../brand/identity.json";
 import type {
   Topic,
   Project,
   Job,
-  PageSummary,
   Finding,
   Model,
   Provider,
   SetupDraft,
-  AuditCoverage,
 } from "../server/contracts";
-type Workspace = {
-  project: Project;
-  jobs: Job[];
-  askActivity: ReturnType<typeof import('../server/asks').askActivity>;
-  pages: PageSummary[];
-  auditId: string | null;
-  revision: string;
-  findingCounts: { total: number; done: number };
-  auditCoverage: AuditCoverage | null;
-  observations: Observation[];
-  findings: Finding[];
-  content: any[];
-  metrics: {
-    requested: number;
-    completed: number;
-    missing: number;
-    mentionRate: number | null;
-    citationRate: number | null;
-    citations: number;
-  };
-  measurement: Job | null;
-  presentation: Presentation;
-  comparison: any;
-  competitors: {
-    domain: string;
-    answersCiting: number;
-    answersCollected: number;
-    citationRate: number | null;
-    urls: string[];
-    observationIds: string[];
-  }[];
-  topics: TopicSummary[];
-};
 const navigationGroups = [
   { label: 'Workspace', items: [['Overview', LayoutDashboard], ['Scans', ScanSearch], ['Brand', Globe]] },
   { label: 'AI visibility', items: [['Ask history', History], ['Prompts', MessagesSquare], ['Visibility', ChartNoAxesCombined], ['Responses', MessagesSquare], ['Sources', Link]] },
@@ -234,7 +202,8 @@ export function App() {
   }, [selected, sessionReady]);
   useEffect(() => { document.title = identity.name; }, []);
   useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [page, selected]);
-  const w = workspace,
+  const engine = useEngineScope(workspace, page), hold = engine.all || engine.loading;
+  const w = engine.workspace,
     p = w?.project;
   const connectedProviders = providerOrder.filter((provider) => connected[provider]);
   const opportunities = opportunityFindings(w?.findings ?? []);
@@ -251,7 +220,7 @@ export function App() {
   const scoped = p?.topics.some((topic) => topic.id === scope) ? scope : null;
   const viewId = page === "Topics" ? topicPage : lensPage ? scoped : null;
   const viewTopic = p?.topics.find((topic) => topic.id === viewId);
-  const { view: topicView, error: topicError } = useTopicView(p?.id, viewTopic ? viewId : null, w?.revision ?? '');
+  const { view: topicView, error: topicError } = useTopicView(p?.id, viewTopic ? viewId : null, w?.revision ?? '', engine.picked);
   const lens = lensPage && scoped ? topicView : null, lensLoading = lensPage && !!scoped && !lens;
   const showLens = !!w && lensPage && w.project.topics.some((topic) => topic.status === "active" || topic.id === scoped);
   const chooseScope = (id: string | null) => { setScope(id); setEvidenceFilter(null); };
@@ -291,8 +260,8 @@ export function App() {
   if (!setupState) return <div className="startup-state" role="status"><img src="/logo.svg" width="40" height="40" alt="" /><h1>{identity.name}</h1>{error || refreshError ? <><p role="alert">{error || refreshError}</p><button className="secondary" disabled={refreshing} onClick={() => { setError(""); setRefreshError(""); void api("/session").then(() => { setSessionReady(true); return refresh(); }).catch((failure) => setError(failure.message)); }}>Try again</button></> : <p>Opening your workspace...</p>}</div>;
   if (page !== "Settings" && (!setupState.completed || !projects.length || newProject || setupState.draft)) return <Onboarding openSettings={openConnections} connected={connected} profiles={profiles} refresh={refresh} draft={setupState.draft} savedProject={projects.find((project) => project.id === setupState.draft?.projectId)} initialStep={setupState.completed && Object.values(connected).some(Boolean) ? 1 : 0} cancel={projects.length && setupState.completed ? () => setNewProject(false) : undefined} finish={async (project, startVisibility) => { if (startVisibility) setJobDialog("measure"); selectedRef.current = project.id; setSelected(project.id); setNewProject(false); changePage("Overview"); await refresh(); }} />;
   const audited = !!w?.pages.length, measured = !!w?.metrics.completed;
-  const comparison = w?.comparison?.status === "comparable" && w.jobs.find(completedBrandMeasurement)?.id === w.measurement?.id ? w.comparison as { previousAt: string; mentionPoints: number | null; citationPoints: number | null } : null;
-  const analysisMeasurement = w?.jobs.find(completedAnalysisBasis);
+  const comparison = w?.comparison?.status === "comparable" && w.jobs.filter(engine.matches).find(completedBrandMeasurement)?.id === w.measurement?.id ? w.comparison as { previousAt: string; mentionPoints: number | null; citationPoints: number | null } : null;
+  const analysisMeasurement = w?.jobs.find(completedAnalysisBasis), reportCheck = w?.jobs.find(completedBrandMeasurement);
   const activeMeasurement = w?.jobs.find(job => ['measure', 'recheck'].includes(job.kind) && !job.topicId && ['queued', 'running', 'paused'].includes(job.status) && !completedMeasurement(job));
   const activeScan = w?.jobs.find(job => ['measure', 'recheck'].includes(job.kind) && !job.topicId && ['queued', 'running', 'paused'].includes(job.status) && (!completedMeasurement(job) || job.prepareRecommendations));
   const completedAnalysis = analysisMeasurement && w!.jobs.find(job => completedAnalysisResult(job)?.measurementJobId === analysisMeasurement.id);
@@ -374,6 +343,7 @@ export function App() {
           <div className="workspace-identity">{page === 'Settings' ? <><Settings size={26} /><div><strong>OpenGEO settings</strong><span>Applies to every brand on this device</span></div></> : <>{p && <SiteIcon projectId={p.id} domain={p.domain} size={30} />}<div><strong>{p?.brand ?? "Your workspace"}</strong>{p && <a href={"https://" + p.domain} target="_blank" rel="noreferrer">{p.domain}<ExternalLink size={11} /></a>}</div></>}</div>
           {p && page !== 'Settings' && <AskBar ask={ask} settingsButton={askSettings} />}
           {showLens && <TopicLens topics={w!.topics} total={p!.prompts.length} value={scoped} onChange={chooseScope} onNew={() => setTopicEditor({ topic: null })} />}
+          {w && engine.lens && <EngineLens scope={engine} onCheck={() => setJobDialog("measure")} />}
           <div className="topbar-actions">{p && page !== 'Settings' && <AskMobileTrigger ask={ask} />}<button className="connection-shortcut" onClick={openConnections} aria-label="Manage connections"><span className={"connection-dot" + (connectedProviders.length ? "" : " off")} aria-hidden="true" />{connectedProviders.slice(0, 3).map((provider) => <ProviderIcon key={provider} provider={provider} size={16} />)}<span>{connectedProviders.length === 1 ? providerLabels[connectedProviders[0]] : connectedProviders.length ? connectedProviders.length + " connections" : "Connect a provider"}</span><ChevronDown size={13} /></button>
           <button
             className="icon-button"
@@ -412,6 +382,7 @@ export function App() {
             )}
           </PageHeader>
           {showLens && <TopicLens mobile topics={w!.topics} total={p!.prompts.length} value={scoped} onChange={chooseScope} onNew={() => setTopicEditor({ topic: null })} />}
+          {w && engine.lens && <EngineLens mobile scope={engine} onCheck={() => setJobDialog("measure")} />}
           {error && (
             <div role="alert" className="alert">
               {error}
@@ -431,11 +402,11 @@ export function App() {
             </div>
           ) : (
             <>
-              {lensLoading ? <div className="workspace-loading" role="status">{topicError ? <p role="alert">{topicError}</p> : <><span className="visually-hidden">Loading this topic</span><div className="panel skeleton tall" aria-hidden="true" /></>}</div>
+              {engine.all && page !== "Overview" ? <AllEnginesStrip scope={engine} page={page} /> : engine.loading ? <EngineWaiting /> : lensLoading ? <div className="workspace-loading" role="status">{topicError ? <p role="alert">{topicError}</p> : <><span className="visually-hidden">Loading this topic</span><div className="panel skeleton tall" aria-hidden="true" /></>}</div>
               : lens?.measurement && ["Visibility", "Responses", "Sources"].includes(page) ? <MeasurementScope measurement={lens.measurement} observations={lens.observations} missing={lens.metrics.missing} />
-              : !lens && w.measurement && ["Overview", "Visibility", "Responses", "Sources"].includes(page) && <MeasurementScope measurement={w.measurement} observations={w.observations} missing={w.metrics.missing} />}
+              : !lens && !engine.all && w.measurement && ["Overview", "Visibility", "Responses", "Sources"].includes(page) && <MeasurementScope measurement={w.measurement} observations={w.observations} missing={w.metrics.missing} />}
               {page === "Ask history" && <AskPage projectId={p!.id} version={w.revision} askId={askId} setAskId={setAskId} ask={ask} refresh={refresh} />}
-              {page === "Overview" && (
+              {page === "Overview" && !engine.loading && (engine.all ? <AllEngines scope={engine} jobs={w.jobs} topics={Object.fromEntries(p!.topics.map((topic) => [topic.id, topic.name]))} consoleConnected={!!connected.console} onCheck={() => setJobDialog("measure")} /> : (
                 <>
                   <OverviewSummary brand={p!.brand} presentation={w.presentation} collected={w.metrics.completed} missing={w.metrics.missing} active={activeScan} onAnswers={() => changePage('Responses')} onCheck={measurementAction.action} />
                   {measured ? <div className="metrics">
@@ -539,7 +510,7 @@ export function App() {
                     />
                   </section>}
                 </>
-              )}
+              ))}
               {page === "Scans" && (
                 <><div className="scan-options"><ActionCard icon={ChartNoAxesCombined} title="AI visibility" description="Ask the questions your customers ask. See which brands are mentioned and which websites get cited."><button className="primary" onClick={measurementAction.action}>{measurementAction.label}<ArrowRight size={16} /></button><button className="text-button" onClick={() => changePage('Visibility')}>View results<ArrowRight size={14} /></button></ActionCard><ActionCard icon={ScanSearch} title="Website health" description="Find pages that are hard to access, missing useful details or unclear to search engines. Runs on your device with no AI charges."><button className="secondary" disabled={!!activeAudit} onClick={() => setJobDialog('audit')}>{activeAudit ? 'Checking your website...' : 'Check website health'}<ArrowRight size={16} /></button></ActionCard></div><RunsPanel jobs={runsNeedingAttention(w.jobs, ["audit", "measure", "recheck"])} run={run} /><h2>Website health results</h2><AuditEssentials audit={w.presentation.audit} /><section className="panel">
                   <div className="panel-heading">
@@ -556,8 +527,8 @@ export function App() {
                   )}
                 </section><WebsiteDiscovery key={p!.id} projectId={p!.id} jobs={w.jobs} run={run} /></>
               )}
-              {page === "Visibility" && lens && <TopicVisibility view={lens} total={p!.prompts.length} evidence={openEvidence} open={() => navigate(() => { setPage("Topics"); setTopicPage(lens.topic.id); })} />}
-              {page === "Visibility" && !lens && !lensLoading && (
+              {page === "Visibility" && !hold && lens && <TopicVisibility view={lens} total={p!.prompts.length} evidence={openEvidence} open={() => navigate(() => { setPage("Topics"); setTopicPage(lens.topic.id); })} />}
+              {page === "Visibility" && !hold && !lens && !lensLoading && (
                 <>
                   {!w.measurement && <section className="panel"><Empty title="Find out how AI answers your customers">
                     Your saved questions define the check. Collect answers to measure brand mentions and website citations, then repeat the same questions to compare results.<br /><button className="primary" onClick={() => canMeasure ? setJobDialog('measure') : openConnections()}>{canMeasure ? 'Start visibility check' : 'Connect an answer provider'}</button>
@@ -604,7 +575,7 @@ export function App() {
                 </>}
                 evidence={(topic) => (ids, label) => navigate(() => { setScope(topic.id); setPage("Responses"); setQuery(""); setAnswerStatus('all'); setEvidenceFilter({ ids, label }); })}
                 openPrompts={() => navigate(() => { setPromptTab('tracked'); setPage('Prompts'); })} openCompetitors={() => navigate(() => { setScope(topicPage); setPage("Competitors"); setTopicPage(null); })} />} />}
-              {page === "Responses" && !lensLoading && (
+              {page === "Responses" && !hold && !lensLoading && (
                 <section className="panel">
                   <div className="panel-heading">
                     <h2>Collected answers</h2>
@@ -629,12 +600,12 @@ export function App() {
                   )}
                 </section>
               )}
-              {page === "Sources" && !lensLoading && (
+              {page === "Sources" && !hold && !lensLoading && (
                 <SourceWorkspace key={p!.id + ':' + (scoped ?? '') + ':' + ((lens ?? w).measurement?.id ?? '')} presentation={(lens ?? w).presentation} observations={(lens ?? w).observations} evidence={openEvidence} projectId={p!.id} ownDomain={p!.domain} competitors={p!.competitors} jobs={w.jobs} measurementId={(lens ?? w).measurement?.id} startCheck={() => changePage('Visibility')} />
               )}
               {page === "Opportunities" && <>
                 {(analysisMeasurement || omittedSuggestions > 0) && <div className="opportunity-context">
-                  {analysisMeasurement && <p className="small">Based on answers collected {shortDate(analysisMeasurement.createdAt)} and the pages reviewed on your website.</p>}
+                  {analysisMeasurement && <p className="small">Based on {engineName(analysisMeasurement)} answers collected {shortDate(analysisMeasurement.createdAt)} and the pages reviewed on your website.</p>}
                   {omittedSuggestions > 0 && <p className="small">{omittedSuggestions} {omittedSuggestions === 1 ? 'suggestion was' : 'suggestions were'} left out because the supporting evidence could not be verified.</p>}
                   {analysisReceipt?.pagesReviewed !== undefined && <p className="small">{analysisReceipt.pagesReviewed} {analysisReceipt.pagesReviewed === 1 ? 'public page' : 'public pages'} reviewed.</p>}
                   {!!analysisReceipt?.uncertainties?.length && <Disclosure label="Review notes"><ul>{analysisReceipt.uncertainties.map((note, index) => <li key={index}>{note}</li>)}</ul></Disclosure>}
@@ -657,13 +628,13 @@ export function App() {
                   revise={draft => { setRevision(draft); setJobDialog('revise'); }}
                   onDraftChange={edit => setUnsavedDraft(edit === null ? null : { projectId: p!.id, ...edit })} />
               </>}
-              {page === "Competitors" && !lensLoading && <Competitors project={p!} jobs={w.jobs} scope={lens ? { prompts: lens.topic.prompts, checkId: lens.measurement?.id } : undefined} run={run} activity={job => <Jobs jobs={[job]} run={run} />} review={measurementId => { setCompetitorCheck(measurementId); setJobDialog('competitors'); }} />}
+              {page === "Competitors" && !hold && !lensLoading && <Competitors project={p!} jobs={w.jobs} scope={lens ? { prompts: lens.topic.prompts, checkId: lens.measurement?.id } : undefined} run={run} activity={job => <Jobs jobs={[job]} run={run} />} review={measurementId => { setCompetitorCheck(measurementId); setJobDialog('competitors'); }} />}
               {page === "Reports" && (
                 <section className="panel">
                   <div className="panel-heading">
                     <h2>Export your work</h2>
                   </div>
-                  <div className="report-overview"><div><h3>{p!.brand}</h3><p>Reports use your current visibility results. Project exports also preserve earlier checks and draft versions. One-off Ask history stays on this device and is not included.</p></div><dl className="evidence-summary" aria-label="Current workspace evidence"><div><dt>Audited pages</dt><dd>{w.presentation.audit.pages}</dd></div><div><dt>Answers in current check</dt><dd>{w.metrics.completed}</dd></div><div><dt>Improvements</dt><dd>{w.findingCounts.total}</dd></div><div><dt>Saved drafts</dt><dd>{w.content.length}</dd></div></dl></div>
+                  <div className="report-overview"><div><h3>{p!.brand}</h3><p>Reports use your newest visibility check{reportCheck ? " (" + engineName(reportCheck) + ", " + shortDate(reportCheck.createdAt) + ")" : ""}. Project exports also preserve earlier checks and draft versions. One-off Ask history stays on this device and is not included.</p></div><dl className="evidence-summary" aria-label="Current workspace evidence"><div><dt>Audited pages</dt><dd>{w.presentation.audit.pages}</dd></div><div><dt>Answers in current check</dt><dd>{workspace?.metrics.completed ?? 0}</dd></div><div><dt>Improvements</dt><dd>{w.findingCounts.total}</dd></div><div><dt>Saved drafts</dt><dd>{w.content.length}</dd></div></dl></div>
                   <div className="report-grid">
                     <div>
                       <FileText size={25} />
@@ -745,8 +716,8 @@ export function App() {
           revision={revision}
           initialTopic={contentTopic}
           finding={contentFinding}
-          measurementJobId={jobDialog === 'competitors' ? competitorCheck : w?.measurement?.id}
-          previousMeasurement={w?.jobs.find(completedBrandMeasurement) ?? null}
+          measurementJobId={jobDialog === 'competitors' ? competitorCheck : jobDialog === 'diagnose' ? analysisMeasurement?.id : w?.measurement?.id}
+          previousMeasurement={(jobDialog === 'diagnose' ? analysisMeasurement : w?.jobs.find(completedBrandMeasurement)) ?? null}
           topic={jobDialog === "measure" && jobTopic ? p.topics.find((topic) => topic.id === jobTopic) ?? null : null}
           run={run}
           onStarted={job => {
