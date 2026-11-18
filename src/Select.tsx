@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search } from "lucide-react";
 
-export type SelectOption = { value: string; label: string; detail?: string; icon?: ReactNode };
+/** `group` starts a labelled section when it differs from the option before; headers are never focused or chosen. */
+export type SelectOption = { value: string; label: string; detail?: string; icon?: ReactNode; group?: string };
 
 /** Keep menus inside a modal's top layer while escaping ordinary scrolling cards. */
 export function Select({ options, value, defaultValue, onChange, label, name, placeholder = "Choose an option", disabled = false, searchable = true, compact = false, "aria-invalid": invalid, "aria-describedby": description }: {
@@ -55,10 +56,13 @@ export function Select({ options, value, defaultValue, onChange, label, name, pl
       <div className={"choice-search " + (!searchable ? "visually-hidden" : "")}><Search size={15} /><input ref={search} role="combobox" aria-label={"Search " + label.toLowerCase()} aria-controls={id} aria-expanded="true" aria-autocomplete="list" aria-activedescendant={filtered[active] ? id + "-" + active : undefined}
         placeholder={"Search " + label.toLowerCase()} value={query} onChange={(event) => setQuery(event.target.value)} /></div>
       <div role="listbox" id={id} aria-label={label} className="choice-options">
-        {filtered.map((option, index) => <button type="button" role="option" aria-selected={current === option.value} tabIndex={-1} id={id + "-" + index} key={option.value}
-          className={index === active ? "highlighted" : ""} onPointerMove={() => setActive(index)} onClick={() => choose(option.value)}>
-          {option.icon}<span>{option.label}{option.detail && <small>{option.detail}</small>}</span>{current === option.value && <Check size={15} />}
-        </button>)}
+        {filtered.map((option, index) => <Fragment key={option.value}>
+          {option.group && option.group !== filtered[index - 1]?.group && <div role="presentation" className="choice-group">{option.group}</div>}
+          <button type="button" role="option" aria-selected={current === option.value} tabIndex={-1} id={id + "-" + index}
+            className={index === active ? "highlighted" : ""} onPointerMove={() => setActive(index)} onClick={() => choose(option.value)}>
+            {option.icon}<span>{option.label}{option.detail && <small>{option.detail}</small>}</span>{current === option.value && <Check size={15} />}
+          </button>
+        </Fragment>)}
         {!filtered.length && <p className="choice-empty">No matching options</p>}
       </div>
     </div>, trigger.current?.closest('dialog') ?? document.body)}

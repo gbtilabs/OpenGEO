@@ -35,6 +35,7 @@ Put the main action in `PageHeader`. Do not repeat the page introduction in a bo
 | Area | Pattern |
 | --- | --- |
 | Overview | Evidence summary, citation coverage, comparable history and next action |
+| Engine lens | Beside the topic lens when two or more engines have checked: All engines as side-by-side cards on Overview, one engine's evidence on every other brand page |
 | Ask | A search field in the top bar; its settings drawer takes the question with engine cards, one limit and the estimate. Ask history shows one column per engine as answers arrive |
 | Prompts | Tabs for tracked questions, Topics, AI suggestions and reported searches. Topic detail keeps results, targets and competitors within this workspace |
 | Visibility | Trends, readable chart data, question coverage grouped by topic and check history |

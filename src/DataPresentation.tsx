@@ -24,7 +24,7 @@ import type {
   SourceRow,
 } from "../server/presentation";
 import {
-  platformLabel,
+  engineLabel, platformLabel,
   ProviderIcon,
   providerLabels,
 } from "./provider-ui";
@@ -687,7 +687,7 @@ export function CheckHistory({ jobs, currentId, recheck, note, topics = {} }: {
               {checks.map(({ job, result }) => (
                 <tr key={job.id} className={job.id === currentId ? "current" : undefined}>
                   <td>
-                    <span className="check-date"><ProviderIcon provider={job.platform ?? "chat_gpt"} size={14} />{dateTime(measurementTime(job))}</span>
+                    <span className="check-date"><ProviderIcon provider={job.platform ?? "chat_gpt"} size={14} />{dateTime(measurementTime(job))}<span className="check-engine">{engineLabel(job)}</span></span>
                     {job.id === currentId ? <small>Shown above</small> : job.topicId ? <small>Topic: {topics[job.topicId] ?? "Removed topic"}</small> : current && result.comparisonKey !== current ? <small>Different questions or settings</small> : null}
                   </td>
                   <td data-label="Brand mentions"><RateBar value={result.metrics.mentionRate} measure="mention" /></td>

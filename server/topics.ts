@@ -6,6 +6,7 @@ import type { Store } from "./storage.js";
 import { z } from "zod";
 import { publicUrl, sameSiteHost } from "./network.js";
 import { pageIdentity as pageKey } from './page-classification.js';
+import { engineKey } from './engine-key.js';
 
 /** Topics point at the brand's own questions and competitors, so editing those lists never leaves a topic asking something the brand no longer tracks. */
 export function normalizeTopics(project: ProjectInput) {
@@ -85,9 +86,9 @@ function targets(topic: Topic, observations: Observation[], pages: PageSummary[]
   });
 }
 
-/** One topic's evidence, read from every check that asked all of its questions, with a trend that compares only like with like. */
-export function topicView(store: Store, project: Project, topic: Topic) {
-  const jobs = store.jobs(project.id), read = reader(store, project);
+/** One topic's evidence, read from every check that asked all of its questions, with a trend that compares only like with like. An engine key keeps it to that engine's checks. */
+export function topicView(store: Store, project: Project, topic: Topic, engine?: string) {
+  const jobs = store.jobs(project.id).filter((job) => !engine || job.kind === "audit" || engineKey(job) === engine), read = reader(store, project);
   const checks = covering(topic, jobs, read);
   const latest = checks[0], current = checks.find((check) => completedMeasurement(check.job));
   const key = current ? topicKey(project, topic, current) : null;

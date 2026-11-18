@@ -143,6 +143,7 @@ export class Store {
           this.db.prepare("DELETE FROM settings WHERE key=?").run(row.key);
       }
       if (this.setting<{ projectId?: string } | null>("setupDraft", null)?.projectId === id) this.set("setupDraft", null);
+      this.db.prepare("DELETE FROM settings WHERE key=?").run("engineChoice:" + id);
       this.db.prepare("DELETE FROM content_recovery WHERE project_id=?").run(id);
       this.db.prepare("DELETE FROM artifacts WHERE project_id=?").run(id);
       this.db.prepare("DELETE FROM steps WHERE job_id IN (SELECT id FROM jobs WHERE project_id=?)").run(id);

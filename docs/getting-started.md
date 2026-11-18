@@ -16,7 +16,7 @@ Open **Prompts** to edit your tracked questions or discover more suggestions. Th
 
 Normal visibility checks search the web. Your connected model and account must support web search; OpenGEO does not silently substitute model-only answers. Review the model, language and spending approval before starting.
 
-In **Visibility**, inspect mention and citation rates. Use **Responses** to read full answers and **Sources** to see the pages cited. A failed check is a missing observation; it does not count as an answer that failed to mention you.
+In **Visibility**, inspect mention and citation rates. Use **Responses** to read full answers and **Sources** to see the pages cited. A failed check is a missing observation; it does not count as an answer that failed to mention you. When more than one engine has checked your website, choose one from the engine selector at the top; **All engines** on the Overview shows each engine's latest check side by side.
 
 ## 3. Check your website's health
 

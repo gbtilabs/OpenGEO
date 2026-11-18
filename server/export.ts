@@ -3,6 +3,7 @@ import type { Finding, PageEvidence, ManagedSourceEvidence } from "./contracts.j
 import type { PortableContent } from "./import.js";
 import { portableJobResult, completedBrandMeasurement, measurementTime, analysisMeasurementId } from "./portable-results.js";
 import { currentFindings } from "./presentation.js";
+import { engineName } from "./engine-key.js";
 import { publicObservation, publicArtifact } from './public-results.js';
 export { escapeHtml } from "./markdown.js";
 export function exportProject(store: Store, id: string) {
@@ -71,7 +72,7 @@ export function reportMarkdown(store: Store, id: string) {
     new Date().toISOString() +
     "\n\n## Visibility\n\n" +
     (latest && metrics
-      ? "Checked: " + new Date(measurementTime(latest)).toISOString() + "\n\n- Brand mentions: " + percent(metrics.mentionRate) + "\n- Website citations: " + percent(metrics.citationRate) + "\n- Answers collected: " + metrics.completed + " of " + metrics.requested + "\n- Missing answers: " + metrics.missing + "\n\nRates use collected answers. Results vary by time, location and account. Missing answers do not count as absent mentions."
+      ? "Engine: " + engineName(latest) + "\n\nChecked: " + new Date(measurementTime(latest)).toISOString() + "\n\n- Brand mentions: " + percent(metrics.mentionRate) + "\n- Website citations: " + percent(metrics.citationRate) + "\n- Answers collected: " + metrics.completed + " of " + metrics.requested + "\n- Missing answers: " + metrics.missing + "\n\nRates use collected answers. Results vary by time, location and account. Missing answers do not count as absent mentions."
       : "No completed measurement. Failed checks are not evidence of absence.") +
     "\n\n## Improvements\n\n" +
     findings

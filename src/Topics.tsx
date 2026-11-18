@@ -13,8 +13,8 @@ import './topics.css';
 type Evidence = (ids: string[], label: string) => void;
 
 /** A topic's evidence refreshes on the workspace's rhythm, so scoped screens never lag the brand view. */
-export function useTopicView(projectId: string | undefined, topicId: string | null, version: string) {
-  const result = useApiResource<TopicView>(projectId && topicId ? '/projects/' + projectId + '/topics/' + topicId : null, version);
+export function useTopicView(projectId: string | undefined, topicId: string | null, version: string, engine: string | null = null) {
+  const result = useApiResource<TopicView>(projectId && topicId ? '/projects/' + projectId + '/topics/' + topicId + (engine ? '?engine=' + encodeURIComponent(engine) : '') : null, version);
   return { view: result.data, error: result.error };
 }
 
